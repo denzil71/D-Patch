@@ -7,6 +7,15 @@ enum Main {
         if CommandLine.arguments.contains("--scan") {
             exit(Scanner.runHeadless())
         }
+        if CommandLine.arguments.contains("--script") {
+            // Script for every finding of the last scan, e.g. `DPatch --script > patch.sh`.
+            guard let r = Storage.load(ScanResult.self, from: Storage.resultsURL) else {
+                FileHandle.standardError.write(Data("No scan results yet; run with --scan first.\n".utf8))
+                exit(1)
+            }
+            print(ScriptGenerator.script(for: r.findings), terminator: "")
+            exit(0)
+        }
         DPatchApp.main()
     }
 }

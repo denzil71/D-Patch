@@ -61,7 +61,9 @@ struct Matcher {
         }
 
         return found.compactMap { ci, ris in
-            let ranges = ris.map { cves[ci].ranges[$0] }
+            var ranges = ris.map { cves[ci].ranges[$0] }
+            // NVD's analysed ranges win; the CNA's often mix release lines (e.g. "< 27" for a fix also in 26.7).
+            if ranges.contains(where: \.nvd) { ranges = ranges.filter(\.nvd) }
             guard ranges.contains(where: { $0.contains(installed) }) else { return nil }
             return Hit(cve: cves[ci], ranges: ranges)
         }

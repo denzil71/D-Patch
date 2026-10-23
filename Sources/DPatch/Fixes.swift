@@ -57,13 +57,15 @@ final class FixResolver {
 
     private func softwareUpdateFix(_ item: InventoryItem, matching: (String) -> Bool,
                                    _ fixes: (String?) -> String?) async -> Fix? {
-        for u in await loadSoftwareUpdates() where matching(u.title) {
-            if let to = fixes(u.version) {
-                return Fix(method: .softwareUpdate, target: u.label, toVersion: to,
-                           summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(to))")
-            }
-        }
-        return nil
+        // Smallest update that fixes it, so a point release wins over a major upgrade.
+        let candidates = await loadSoftwareUpdates()
+            .filter { matching($0.title) && fixes($0.version) != nil }
+            .sorted { Version.isLess($0.version, $1.version) }
+        guard let u = candidates.first else { return nil }
+        let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
+        let note = item.kind == .macos && major(u.version) != major(item.version) ? " — major macOS upgrade" : ""
+        return Fix(method: .softwareUpdate, target: u.label, toVersion: u.version,
+                   summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(u.version))\(note)")
     }
 
     private func loadSoftwareUpdates() async -> [SoftwareUpdate] {

@@ -10,6 +10,8 @@ enum Severity: String, Codable, Comparable {
 /// One affected-version range for a product, as published by NVD (CPE) or the CNA.
 /// Only ranges with an upper bound are kept: without one there is no known fixed version.
 struct ProductRange: Codable, Hashable {
+    /// From NVD's analysed CPE data (true) or the CNA's affected list (false).
+    var nvd: Bool
     var vendor: String
     var product: String
     var start: String?

@@ -64,6 +64,15 @@ struct Version: Comparable, CustomStringConvertible {
         return 0
     }
 
+    /// Orders version strings; unparseable ones sort first.
+    static func isLess(_ a: String, _ b: String) -> Bool {
+        switch (Version(a), Version(b)) {
+        case let (x?, y?): return x < y
+        case (nil, _?): return true
+        default: return false
+        }
+    }
+
     /// First version-looking token in free text, e.g. "1.18.0 or later" -> "1.18.0".
     static func firstToken(in text: String) -> String? {
         guard let r = text.range(of: #"\d[0-9A-Za-z.\-_]*"#, options: .regularExpression) else { return nil }

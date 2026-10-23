@@ -25,6 +25,11 @@ enum ScriptGenerator {
         for f in findings where !fixes.contains(where: { $0.method == f.fix.method && $0.target == f.fix.target }) {
             fixes.append(f.fix)
         }
+        // A newer macOS update includes the fixes of an older one; install only the newest.
+        let macOS = fixes.filter { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") }
+        if let newest = macOS.max(by: { Version.isLess($0.toVersion, $1.toVersion) }) {
+            fixes.removeAll { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") && $0.target != newest.target }
+        }
         let order: [FixMethod] = [.brewFormula, .brewCask, .brewCaskReplace, .appStore, .softwareUpdate]
         fixes.sort { (order.firstIndex(of: $0.method)!, $0.target) < (order.firstIndex(of: $1.method)!, $1.target) }
         let needsBrew = fixes.contains { [.brewFormula, .brewCask, .brewCaskReplace, .appStore].contains($0.method) }

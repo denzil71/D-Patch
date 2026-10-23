@@ -22,7 +22,8 @@ enum Scanner {
             progress("Looking for fixes for \(item.name)…")
             for hit in hits {
                 let installed = Version(item.version)!
-                guard let range = hit.ranges.first(where: { $0.contains(installed) }),
+                guard let range = hit.ranges.filter({ $0.contains(installed) })
+                        .min(by: { Version.isLess($0.end, $1.end) }),
                       let fix = await resolver.fix(for: item, ranges: hit.ranges) else { continue }
                 findings.append(Finding(cve: hit.cve, item: item, fixedIn: range.fixedInDescription, fix: fix))
             }

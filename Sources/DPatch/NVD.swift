@@ -243,7 +243,7 @@ extension CVERecord {
         guard f.count > 5 else { return nil }
         let end = m.versionEndExcluding ?? m.versionEndIncluding
         guard let end, Version(end) != nil else { return nil }
-        return ProductRange(vendor: f[3], product: f[4],
+        return ProductRange(nvd: true, vendor: f[3], product: f[4],
                             start: m.versionStartIncluding ?? m.versionStartExcluding,
                             startInclusive: m.versionStartExcluding == nil,
                             end: end, endInclusive: m.versionEndExcluding == nil)
@@ -258,21 +258,21 @@ extension CVERecord {
         }
         var r: ProductRange?
         if let lt = v.lessThan ?? v.lessThanOrEqual, let end = Version.firstToken(in: lt) {
-            r = ProductRange(vendor: vendor, product: product, start: start(v.version), startInclusive: true,
+            r = ProductRange(nvd: false, vendor: vendor, product: product, start: start(v.version), startInclusive: true,
                              end: end, endInclusive: v.lessThan == nil)
         } else if let text = v.version {
             let upper = text.range(of: #"<=?\s*v?(\d[0-9A-Za-z.\-_]*)"#, options: .regularExpression)
             if let upper {
                 let bound = String(text[upper])
                 let lower = text.range(of: #">=?\s*v?(\d[0-9A-Za-z.\-_]*)"#, options: .regularExpression).map { String(text[$0]) }
-                r = ProductRange(vendor: vendor, product: product,
+                r = ProductRange(nvd: false, vendor: vendor, product: product,
                                  start: lower.flatMap(Version.firstToken(in:)),
                                  startInclusive: lower.map { $0.hasPrefix(">=") } ?? true,
                                  end: Version.firstToken(in: bound) ?? bound,
                                  endInclusive: bound.hasPrefix("<="))
             } else if let m = text.range(of: #"^\s*(\d+(\.\d+)*)\s*-\s*(\d+(\.\d+)*)\s*$"#, options: .regularExpression) {
                 let sides = text[m].split(separator: "-").map { $0.trimmingCharacters(in: .whitespaces) }
-                r = ProductRange(vendor: vendor, product: product, start: sides[0], startInclusive: true,
+                r = ProductRange(nvd: false, vendor: vendor, product: product, start: sides[0], startInclusive: true,
                                  end: sides[1], endInclusive: true)
             }
         }
