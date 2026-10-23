@@ -10,11 +10,17 @@ struct PatchRequest: Identifiable {
 /// Confirms the ticked fixes, then runs them in Terminal (or saves them as a script).
 struct PatchSheet: View {
     let request: PatchRequest
-    var onLaunched: () -> Void = {}
+    var onLaunched: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var showScript = false
+    @State private var showScript: Bool
     @State private var launched: URL?
     @State private var savedTo: URL?
+
+    init(request: PatchRequest, showScript: Bool = false, onLaunched: @escaping () -> Void = {}) {
+        self.request = request
+        self.onLaunched = onLaunched
+        _showScript = State(initialValue: showScript)
+    }
 
     private var fixes: [Fix] { ScriptGenerator.fixes(for: request.findings) }
     private var cveCount: Int { Set(request.findings.map(\.cve.id)).count }
@@ -45,6 +51,8 @@ struct PatchSheet: View {
                 }
 
                 DisclosureGroup("Script", isExpanded: $showScript) {
+                    ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
+                        .padding(.vertical, 8)
                     ScrollView {
                         Text(ScriptGenerator.script(for: request.findings, confirm: false, rescan: Bundle.main.executablePath))
                             .font(.system(.callout, design: .monospaced))
@@ -150,5 +158,32 @@ struct PatchSheet: View {
         } catch {
             NSAlert(error: error).runModal()
         }
+    }
+}
+
+/// Plain-English summary of what the script does: a sentence for one step, a numbered list for more.
+private struct ScriptSteps: View {
+    let steps: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if steps.count == 1 {
+                Text("When it runs, this script will \(lowercasedFirst(steps[0]))")
+            } else {
+                Text("When it runs, this script will:")
+                ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(i + 1).").monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .trailing)
+                        Text(LocalizedStringKey(step))
+                    }
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func lowercasedFirst(_ s: String) -> LocalizedStringKey {
+        LocalizedStringKey(s.prefix(1).lowercased() + s.dropFirst())
     }
 }
