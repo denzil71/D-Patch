@@ -1,8 +1,9 @@
 import Foundation
 
-/// Fetches HIGH/CRITICAL CVEs from the NVD 2.0 API and keeps a local, incrementally updated cache.
+/// Fetches CVEs of the chosen severities from the NVD 2.0 API and keeps a local, incrementally updated cache.
 struct NVDClient {
     var apiKey: String?
+    var severities: [Severity]
     var progress: (String) -> Void
 
     static let endpoint = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -13,6 +14,8 @@ struct NVDClient {
         var windowStart: Date
         var fetchedThrough: Date
         var records: [String: CVERecord]
+        /// Levels the records cover; nil in caches written before levels were configurable.
+        var severities: [Severity]?
     }
 
     /// Returns cached + fresh CVEs published within the last `lookbackDays`.
@@ -23,19 +26,28 @@ struct NVDClient {
         if let old = Storage.load(Cache.self, from: Storage.cacheURL), !old.records.isEmpty,
            now.timeIntervalSince(old.fetchedThrough) < Double(Self.maxRangeDays) * 86_400 {
             cache = old
+            let had = Set(old.severities ?? Severity.defaults)
+            // Levels no longer wanted are dropped; newly wanted ones are fetched for the whole window.
+            cache.records = cache.records.filter { severities.contains($0.value.severity) }
+            let added = severities.filter { !had.contains($0) }
+            if !added.isEmpty {
+                for r in try await fetch(field: "pub", severities: added, from: start, to: now) { cache.records[r.id] = r }
+            }
+            let kept = severities.filter { had.contains($0) }
             // Extend the window backwards by publish date when the look-back grew.
-            if start < cache.windowStart {
-                for r in try await fetch(field: "pub", from: start, to: cache.windowStart) { cache.records[r.id] = r }
+            if start < cache.windowStart, !kept.isEmpty {
+                for r in try await fetch(field: "pub", severities: kept, from: start, to: cache.windowStart) { cache.records[r.id] = r }
             }
             // Then pick up everything published or changed since the last scan.
-            for r in try await fetch(field: "lastMod", from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
+            for r in try await fetch(field: "lastMod", severities: kept, from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
             where r.published >= start {
                 cache.records[r.id] = r
             }
         } else {
             cache = Cache(windowStart: start, fetchedThrough: now, records: [:])
-            for r in try await fetch(field: "pub", from: start, to: now) { cache.records[r.id] = r }
+            for r in try await fetch(field: "pub", severities: severities, from: start, to: now) { cache.records[r.id] = r }
         }
+        cache.severities = severities
         cache.windowStart = start
         cache.fetchedThrough = now
         cache.records = cache.records.filter { $0.value.published >= start }
@@ -43,10 +55,10 @@ struct NVDClient {
         return Array(cache.records.values)
     }
 
-    private func fetch(field: String, from: Date, to: Date) async throws -> [CVERecord] {
+    private func fetch(field: String, severities: [Severity], from: Date, to: Date) async throws -> [CVERecord] {
         var out: [CVERecord] = []
-        // Filtering by severity on the server keeps downloads small (all CVEs are ~20x more).
-        for severity in ["CRITICAL", "HIGH"] {
+        // Filtering by severity on the server keeps downloads small (all CVEs are ~20x critical + high).
+        for severity in severities.sorted(by: >).map(\.rawValue) {
             var chunkStart = from
             while chunkStart < to {
                 let chunkEnd = min(to, chunkStart.addingTimeInterval(Double(Self.maxRangeDays) * 86_400))

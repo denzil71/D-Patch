@@ -7,7 +7,23 @@ struct SettingsView: View {
     @AppStorage("lookbackDays") private var lookbackDays = 90
     @AppStorage("nvdAPIKey") private var apiKey = ""
     @AppStorage("notifyAfterAutoscan") private var notify = true
+    @AppStorage("severities") private var severitiesRaw = "CRITICAL,HIGH"
     @State private var scheduleError: String?
+
+    private var selectedSeverities: Set<Severity> {
+        Set(severitiesRaw.split(separator: ",").compactMap { Severity(rawValue: String($0)) })
+    }
+
+    private func severityBinding(_ level: Severity) -> Binding<Bool> {
+        Binding {
+            selectedSeverities.contains(level)
+        } set: { on in
+            var set = selectedSeverities
+            if on { set.insert(level) } else { set.remove(level) }
+            guard !set.isEmpty else { return }
+            severitiesRaw = set.sorted(by: >).map(\.rawValue).joined(separator: ",")
+        }
+    }
 
     private var time: Binding<Date> {
         Binding {
@@ -33,6 +49,22 @@ struct SettingsView: View {
                 if let e = scheduleError {
                     Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.caption)
                 }
+            }
+
+            Section("Severity") {
+                ForEach(Severity.allCases.reversed(), id: \.self) { level in
+                    Toggle(isOn: severityBinding(level)) {
+                        HStack(spacing: 6) {
+                            Circle().fill(level.color).frame(width: 8, height: 8)
+                            Text(level.label)
+                        }
+                    }
+                    // At least one level has to stay on.
+                    .disabled(selectedSeverities == [level])
+                }
+                Text("Scans look for CVEs at the ticked levels. Medium and Low add many more CVEs, so the first scan after ticking them takes longer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("CVE database") {

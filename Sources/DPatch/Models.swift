@@ -1,10 +1,19 @@
 import Foundation
 
-enum Severity: String, Codable, Comparable {
+/// CVSS v3 severity, lowest first.
+enum Severity: String, Codable, Comparable, CaseIterable {
+    case low = "LOW"
+    case medium = "MEDIUM"
     case high = "HIGH"
     case critical = "CRITICAL"
 
-    static func < (a: Severity, b: Severity) -> Bool { a == .high && b == .critical }
+    static let defaults: [Severity] = [.critical, .high]
+
+    static func < (a: Severity, b: Severity) -> Bool {
+        allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
+    }
+
+    var label: String { rawValue.capitalized }
 }
 
 /// One affected-version range for a product, as published by NVD (CPE) or the CNA.
@@ -101,6 +110,8 @@ struct Finding: Codable, Identifiable {
 struct ScanResult: Codable {
     var scannedAt: Date
     var lookbackDays: Int
+    /// Levels this scan covered; nil for scans made before the preference existed (critical and high).
+    var severities: [Severity]?
     var cvesChecked: Int
     var itemsChecked: Int
     var findings: [Finding]

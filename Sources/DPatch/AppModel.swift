@@ -8,8 +8,8 @@ enum DayFilter: Hashable {
 
 struct DaySummary: Identifiable {
     var day: Date
-    var critical: Int
-    var high: Int
+    /// Distinct CVEs per severity published that day.
+    var counts: [Severity: Int]
     var id: Date { day }
 }
 
@@ -73,8 +73,7 @@ final class AppModel: ObservableObject {
         var byDay: [Date: [String: Severity]] = [:]
         for f in findings { byDay[cal.startOfDay(for: f.cve.published), default: [:]][f.cve.id] = f.cve.severity }
         return byDay.map { day, cves in
-            DaySummary(day: day, critical: cves.values.filter { $0 == .critical }.count,
-                       high: cves.values.filter { $0 == .high }.count)
+            DaySummary(day: day, counts: Dictionary(grouping: cves.values, by: { $0 }).mapValues(\.count))
         }
         .sorted { $0.day > $1.day }
     }

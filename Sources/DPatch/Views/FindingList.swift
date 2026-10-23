@@ -11,7 +11,7 @@ struct FindingList: View {
                 ContentUnavailableView {
                     Label("No scan yet", systemImage: "shield.lefthalf.filled")
                 } description: {
-                    Text("D-Patch checks the software on this Mac against critical and high CVEs and lists the ones with an available fix.")
+                    Text("D-Patch checks the software on this Mac against known CVEs, at the severity levels chosen in Settings, and lists the ones with an available fix.")
                 } actions: {
                     Button("Scan Now") { model.scan() }.disabled(model.isScanning)
                 }
@@ -19,7 +19,7 @@ struct FindingList: View {
                 ContentUnavailableView(model.search.isEmpty ? "Nothing to patch" : "No matches",
                                        systemImage: model.search.isEmpty ? "checkmark.shield" : "magnifyingglass",
                                        description: Text(model.search.isEmpty
-                                                         ? "No fixable critical or high CVEs affect this Mac."
+                                                         ? "No fixable CVEs at the chosen severity levels affect this Mac."
                                                          : "No CVEs match “\(model.search)”."))
             } else {
                 // Not a List: on macOS its rows keep their first height, so an expanded row has no room.
@@ -127,12 +127,12 @@ struct SeverityTag: View {
     var score: Double
 
     var body: some View {
-        Text("\(severity == .critical ? "CRITICAL" : "HIGH") \(score, specifier: "%.1f")")
+        Text("\(severity.rawValue) \(score, specifier: "%.1f")")
             .font(.caption.weight(.bold).monospacedDigit())
-            .foregroundStyle(severity == .critical ? Color.red : Color.orange)
+            .foregroundStyle(severity.color)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background((severity == .critical ? Color.red : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+            .background(severity.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
             .frame(width: 104, alignment: .leading)
     }
 }
@@ -236,6 +236,17 @@ private struct DetailSection<Content: View>: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             content
+        }
+    }
+}
+
+extension Severity {
+    var color: Color {
+        switch self {
+        case .critical: return .red
+        case .high: return .orange
+        case .medium: return .yellow
+        case .low: return .gray
         }
     }
 }
