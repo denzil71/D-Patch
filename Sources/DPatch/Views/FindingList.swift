@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FindingList: View {
@@ -21,14 +22,23 @@ struct FindingList: View {
                                                          ? "No fixable critical or high CVEs affect this Mac."
                                                          : "No CVEs match “\(model.search)”."))
             } else {
-                List {
-                    Section {
-                        ForEach(visible) { FindingRow(finding: $0) }
-                    } header: {
-                        ListHeader(visible: visible)
+                // Not a List: on macOS its rows keep their first height, so an expanded row has no room.
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        Section {
+                            ForEach(visible) { f in
+                                FindingRow(finding: f)
+                                    .padding(.horizontal, 16)
+                                Divider().padding(.leading, 16)
+                            }
+                        } header: {
+                            ListHeader(visible: visible)
+                                .padding(.horizontal, 16)
+                                .background(.bar)
+                        }
                     }
                 }
-                .listStyle(.inset)
+                .background(Color(nsColor: .textBackgroundColor))
             }
         }
         .navigationTitle(title)
@@ -60,45 +70,58 @@ private struct ListHeader: View {
             }
         }
         .font(.callout)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }
+
 
 struct FindingRow: View {
     @EnvironmentObject var model: AppModel
     let finding: Finding
-    @State private var expanded = false
 
     var body: some View {
         let cve = finding.cve
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Toggle("", isOn: Binding(get: { model.checked.contains(finding.id) }, set: { _ in model.toggle(finding) }))
-                .toggleStyle(.checkbox)
-                .labelsHidden()
-            DisclosureGroup(isExpanded: $expanded) {
-                FindingDetail(finding: finding)
-                    .padding(.top, 6)
-                    .padding(.bottom, 4)
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    SeverityTag(severity: cve.severity, score: cve.score)
-                    Text(cve.id).font(.body.monospaced().weight(.medium))
-                    Text("\(finding.item.name) \(finding.item.version)")
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text("→ \(FixResolver.plain(finding.fix.toVersion))")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.green)
+        let expanded = model.expanded.contains(finding.id)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Toggle("", isOn: Binding(get: { model.checked.contains(finding.id) }, set: { _ in model.toggle(finding) }))
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) { model.toggleExpanded(finding) }
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .frame(width: 10)
+                        SeverityTag(severity: cve.severity, score: cve.score)
+                        Text(cve.id).font(.body.monospaced().weight(.medium))
+                        Text("\(finding.item.name) \(finding.item.version)")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text("→ \(FixResolver.plain(finding.fix.toVersion))")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.green)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation { expanded.toggle() } }
+                .buttonStyle(.plain)
+                .help(expanded ? "Hide details" : "Show overview and fix")
+            }
+            if expanded {
+                FindingDetail(finding: finding)
+                    .padding(.leading, 30)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 }
-
 struct SeverityTag: View {
     var severity: Severity
     var score: Double
@@ -119,32 +142,73 @@ struct FindingDetail: View {
 
     var body: some View {
         let cve = finding.cve
-        VStack(alignment: .leading, spacing: 10) {
-            Text(cve.summary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
-                row("Published", cve.published.formatted(date: .long, time: .shortened))
-                row("Installed", "\(finding.item.name) \(finding.item.version)" + (finding.item.path.map { " — \($0)" } ?? ""))
-                row("Fixed in", finding.fixedIn)
-                GridRow {
-                    Text("Fix").foregroundStyle(.secondary)
-                    Text(finding.fix.summary).fontWeight(.medium).foregroundStyle(.green)
+        let command = ScriptGenerator.command(for: finding.fix)
+        VStack(alignment: .leading, spacing: 14) {
+            DetailSection(title: "Overview", systemImage: "info.circle") {
+                Text(cve.summary.isEmpty ? "No description published." : cve.summary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
+                    row("Severity", "\(cve.severity.rawValue.capitalized) — CVSS \(String(format: "%.1f", cve.score))")
+                    if !cve.vector.isEmpty { row("Vector", cve.vector) }
+                    row("Published", cve.published.formatted(date: .long, time: .shortened))
+                    row("Affects", "\(finding.item.name) \(finding.item.version)" + (finding.item.path.map { " — \($0)" } ?? ""))
+                    row("Fixed in", finding.fixedIn)
                 }
-                if !cve.vector.isEmpty { row("CVSS", cve.vector) }
+                .font(.callout)
             }
-            .font(.callout)
 
-            HStack(spacing: 14) {
-                Link("NVD entry", destination: URL(string: "https://nvd.nist.gov/vuln/detail/\(cve.id)")!)
-                ForEach(Array(cve.references.prefix(4).enumerated()), id: \.offset) { _, ref in
-                    if let url = URL(string: ref) {
-                        Link(url.host() ?? ref, destination: url).lineLimit(1)
+            DetailSection(title: "How to fix", systemImage: "wrench.and.screwdriver") {
+                Text(finding.fix.summary).fontWeight(.medium)
+                HStack(alignment: .top, spacing: 8) {
+                    Text(command)
+                        .font(.system(.callout, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy command")
+                }
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(.separator))
+                Text(LocalizedStringKey(note))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            DetailSection(title: "References", systemImage: "link") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Link("NVD — \(cve.id)", destination: URL(string: "https://nvd.nist.gov/vuln/detail/\(cve.id)")!)
+                    ForEach(Array(cve.references.enumerated()), id: \.offset) { _, ref in
+                        if let url = URL(string: ref) {
+                            Link(ref, destination: url).lineLimit(1).truncationMode(.middle)
+                        }
                     }
                 }
+                .font(.callout)
             }
-            .font(.callout)
+        }
+    }
+
+    private var note: String {
+        switch finding.fix.method {
+        case .brewFormula:
+            return "Upgrades the Homebrew formula to \(finding.fix.toVersion). Run `brew update` first so Homebrew knows about the latest version."
+        case .brewCask:
+            return "Upgrades the Homebrew-managed app to \(FixResolver.plain(finding.fix.toVersion)). Quit the app first."
+        case .brewCaskReplace:
+            return "This app was installed outside Homebrew. The command installs the Homebrew cask (\(FixResolver.plain(finding.fix.toVersion))) over it, after which Homebrew manages its updates. Quit the app first."
+        case .appStore:
+            return "Updates the app from the Mac App Store using the `mas` tool (`brew install mas`); you must be signed in to the App Store. You can also update it in App Store › Updates."
+        case .softwareUpdate:
+            return "Installs the Apple update. It needs an administrator password and may restart the Mac. You can also install it from System Settings › General › Software Update."
         }
     }
 
@@ -152,6 +216,21 @@ struct FindingDetail: View {
         GridRow {
             Text(label).foregroundStyle(.secondary)
             Text(value).textSelection(.enabled)
+        }
+    }
+}
+
+private struct DetailSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content
         }
     }
 }

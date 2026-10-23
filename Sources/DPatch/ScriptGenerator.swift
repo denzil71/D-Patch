@@ -86,14 +86,7 @@ enum ScriptGenerator {
                     lines.append("# Apple software updates (needs an administrator password)")
                 }
             }
-            let t = shellQuote(fix.target)
-            switch fix.method {
-            case .brewFormula: lines.append("run \"$BREW\" upgrade --formula \(t)")
-            case .brewCask: lines.append("run \"$BREW\" upgrade --cask --greedy \(t)")
-            case .brewCaskReplace: lines.append("run \"$BREW\" install --cask --force \(t)")
-            case .appStore: lines.append("run \"$MAS\" upgrade \(t)")
-            case .softwareUpdate: lines.append("run sudo /usr/sbin/softwareupdate --install \(t)")
-            }
+            lines.append("run " + command(for: fix, brew: "\"$BREW\"", mas: "\"$MAS\""))
         }
 
         lines += [
@@ -110,6 +103,18 @@ enum ScriptGenerator {
             lines.append("echo \"Apple updates may need a restart to take effect.\"")
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The shell command that applies one fix, as run by the script and shown in the app.
+    static func command(for fix: Fix, brew: String = "brew", mas: String = "mas") -> String {
+        let t = shellQuote(fix.target)
+        switch fix.method {
+        case .brewFormula: return "\(brew) upgrade --formula \(t)"
+        case .brewCask: return "\(brew) upgrade --cask --greedy \(t)"
+        case .brewCaskReplace: return "\(brew) install --cask --force \(t)"
+        case .appStore: return "\(mas) upgrade \(t)"
+        case .softwareUpdate: return "sudo /usr/sbin/softwareupdate --install \(t)"
+        }
     }
 
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
