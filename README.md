@@ -17,6 +17,7 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
 ### Window
 - **Left** — dates on which CVEs were published, each with a count of CVEs per severity: critical (red), high (orange), medium (yellow) and low (grey). **All dates** shows everything.
 - **Right** — the CVEs for the selected date. Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector and links. Search by CVE ID, app or keyword.
+- **Filters** — above the list: severity chips (click one to hide or show that level), a **Fix** menu (Homebrew, App Store or Apple Software Update) and **Hide major macOS upgrades** (CVEs whose only fix is a new major macOS version). The date counts follow the filters. Ticked CVEs that a filter hides stay ticked and are still patched; the list header says how many are not shown.
 - **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 
 ### Automatic scan

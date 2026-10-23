@@ -105,6 +105,13 @@ struct Finding: Codable, Identifiable {
     var fix: Fix
 
     var id: String { "\(cve.id)|\(item.key)" }
+
+    /// The only fix is a new major macOS version (26.x -> 27).
+    var isMajorUpgrade: Bool {
+        guard item.kind == .macos, fix.method == .softwareUpdate else { return false }
+        let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
+        return major(fix.toVersion) != major(item.version)
+    }
 }
 
 struct ScanResult: Codable {

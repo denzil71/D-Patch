@@ -15,33 +15,51 @@ struct FindingList: View {
                 } actions: {
                     Button("Scan Now") { model.scan() }.disabled(model.isScanning)
                 }
-            } else if visible.isEmpty {
-                ContentUnavailableView(model.search.isEmpty ? "Nothing to patch" : "No matches",
-                                       systemImage: model.search.isEmpty ? "checkmark.shield" : "magnifyingglass",
-                                       description: Text(model.search.isEmpty
-                                                         ? "No fixable CVEs at the chosen severity levels affect this Mac."
-                                                         : "No CVEs match “\(model.search)”."))
             } else {
-                // Not a List: on macOS its rows keep their first height, so an expanded row has no room.
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        Section {
-                            ForEach(visible) { f in
-                                FindingRow(finding: f)
-                                    .padding(.horizontal, 16)
-                                Divider().padding(.leading, 16)
+                VStack(spacing: 0) {
+                    FilterBar()
+                    Divider()
+                    if visible.isEmpty {
+                        emptyState
+                    } else {
+                        // Not a List: on macOS its rows keep their first height, so an expanded row has no room.
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                Section {
+                                    ForEach(visible) { f in
+                                        FindingRow(finding: f)
+                                            .padding(.horizontal, 16)
+                                        Divider().padding(.leading, 16)
+                                    }
+                                } header: {
+                                    ListHeader(visible: visible)
+                                        .padding(.horizontal, 16)
+                                        .background(.bar)
+                                }
                             }
-                        } header: {
-                            ListHeader(visible: visible)
-                                .padding(.horizontal, 16)
-                                .background(.bar)
                         }
+                        .background(Color(nsColor: .textBackgroundColor))
                     }
                 }
-                .background(Color(nsColor: .textBackgroundColor))
             }
         }
         .navigationTitle(title)
+    }
+
+    @ViewBuilder private var emptyState: some View {
+        if !model.search.isEmpty {
+            ContentUnavailableView("No matches", systemImage: "magnifyingglass",
+                                   description: Text("No CVEs match “\(model.search)”."))
+        } else if model.filtersActive {
+            ContentUnavailableView {
+                Label("No CVEs match the filters", systemImage: "line.3.horizontal.decrease.circle")
+            } actions: {
+                Button("Clear Filters") { model.clearFilters() }
+            }
+        } else {
+            ContentUnavailableView("Nothing to patch", systemImage: "checkmark.shield",
+                                   description: Text("No fixable CVEs at the chosen severity levels affect this Mac."))
+        }
     }
 
     private var title: String {
@@ -65,7 +83,9 @@ private struct ListHeader: View {
             .toggleStyle(.checkbox)
             Spacer()
             if !model.checked.isEmpty {
-                Text("\(model.checked.count) ticked")
+                let hidden = model.hiddenCheckedCount
+                Text("\(model.checked.count) ticked" + (hidden > 0 ? " (\(hidden) not shown)" : ""))
+                    .help(hidden > 0 ? "Some ticked CVEs are hidden by the filters or the selected date; Patch Selected still includes them." : "")
                 Button("Clear") { model.checked.removeAll() }.buttonStyle(.link)
             }
         }
@@ -248,5 +268,74 @@ extension Severity {
         case .medium: return .yellow
         case .low: return .gray
         }
+    }
+}
+
+/// Severity chips, fix-source menu and major-upgrade toggle above the CVE list.
+private struct FilterBar: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                ForEach(model.severitiesFound, id: \.self) { level in
+                    SeverityChip(level: level, on: isShown(level)) { toggle(level) }
+                }
+            }
+
+            Picker("Fix", selection: $model.fixFilter) {
+                Text("All fixes").tag(FixKind?.none)
+                Divider()
+                ForEach(FixKind.allCases) { Text($0.rawValue).tag(FixKind?.some($0)) }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+
+            Toggle("Hide major macOS upgrades", isOn: $model.hideMajorUpgrades)
+                .toggleStyle(.checkbox)
+                .disabled(!model.findings.contains(where: \.isMajorUpgrade))
+                .help("Hide CVEs whose only fix is a new major version of macOS")
+
+            Spacer()
+            if model.filtersActive {
+                Button("Clear Filters") { model.clearFilters() }.buttonStyle(.link)
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func isShown(_ s: Severity) -> Bool { model.severityFilter.isEmpty || model.severityFilter.contains(s) }
+
+    /// Chips start all on; clicking hides or shows a level, and the last shown level can't be hidden.
+    private func toggle(_ s: Severity) {
+        var shown = model.severityFilter.isEmpty ? Set(model.severitiesFound) : model.severityFilter
+        if shown.contains(s) { shown.remove(s) } else { shown.insert(s) }
+        guard !shown.isEmpty else { return }
+        model.severityFilter = shown == Set(model.severitiesFound) ? [] : shown
+    }
+}
+
+private struct SeverityChip: View {
+    let level: Severity
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Circle().fill(on ? level.color : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+                Text(level.label)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .foregroundStyle(on ? Color.primary : Color.secondary)
+            .background(on ? level.color.opacity(0.18) : Color.clear, in: Capsule())
+            .overlay(Capsule().stroke(on ? level.color.opacity(0.6) : Color.secondary.opacity(0.35)))
+        }
+        .buttonStyle(.plain)
+        .help(on ? "Hide \(level.label.lowercased()) CVEs" : "Show \(level.label.lowercased()) CVEs")
     }
 }
