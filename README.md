@@ -28,8 +28,9 @@ Without a key the NVD allows 5 requests per 30 seconds. A free key ([request one
 ## Building
 
 ```bash
-./build.sh            # builds build/D-Patch.app
+./build.sh            # builds a universal (Apple Silicon + Intel) build/D-Patch.app
 ./build.sh --install  # also copies it to /Applications
+./build.sh --dmg      # also packages dist/D-Patch-<version>.dmg (unsigned)
 ```
 
 Command-line scan, without the window:
