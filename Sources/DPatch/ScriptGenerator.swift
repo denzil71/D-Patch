@@ -119,6 +119,42 @@ enum ScriptGenerator {
         return fixes
     }
 
+    /// What `script(for:confirm:rescan:)` does, step by step, in plain English (Markdown).
+    static func steps(for findings: [Finding], rescan: Bool) -> [String] {
+        let fixes = self.fixes(for: findings)
+        func name(_ fix: Fix) -> String {
+            findings.first { $0.fix.method == fix.method && $0.fix.target == fix.target }?.item.name ?? fix.target
+        }
+        var steps: [String] = []
+        if fixes.contains(where: { $0.method != .softwareUpdate }) {
+            steps.append("Find Homebrew and refresh its list of available versions (`brew update`).")
+        }
+        if fixes.contains(where: { $0.method == .appStore }) {
+            steps.append("Install the `mas` command-line tool with Homebrew, if it isn't already installed.")
+        }
+        for fix in fixes {
+            let to = FixResolver.plain(fix.toVersion)
+            switch fix.method {
+            case .brewFormula:
+                steps.append("Upgrade **\(fix.target)** to \(to) with Homebrew.")
+            case .brewCask:
+                steps.append("Upgrade the **\(name(fix))** app to \(to) with Homebrew.")
+            case .brewCaskReplace:
+                steps.append("Replace **\(name(fix))**, which was installed outside Homebrew, with Homebrew's copy (\(to)). Homebrew keeps it updated from then on.")
+            case .appStore:
+                steps.append("Update **\(name(fix))** to \(to) from the Mac App Store.")
+            case .softwareUpdate:
+                let notes = fix.notesLink.map { " [Read Apple's notes](\($0.url.absoluteString))" } ?? ""
+                steps.append("Install **\(name(fix)) \(to)** with Apple Software Update. It asks for your administrator password, and the Mac may need to restart.\(notes)")
+            }
+        }
+        if rescan {
+            steps.append("Rescan this Mac so D-Patch's list shows what is still open.")
+        }
+        steps.append("Carry on if a step fails, and list any failures at the end.")
+        return steps
+    }
+
     /// The shell command that applies one fix, as run by the script and shown in the app.
     static func command(for fix: Fix, brew: String = "brew", mas: String = "mas") -> String {
         let t = shellQuote(fix.target)
