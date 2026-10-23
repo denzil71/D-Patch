@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var filter: DayFilter? = .all
     @Published var checked: Set<String> = []
+    @Published var expanded: Set<String> = []
     @Published var search = ""
 
     private var observer: NSObjectProtocol?
@@ -97,6 +98,10 @@ final class AppModel: ObservableObject {
 
     func toggle(_ f: Finding) {
         if checked.contains(f.id) { checked.remove(f.id) } else { checked.insert(f.id) }
+    }
+
+    func toggleExpanded(_ f: Finding) {
+        if expanded.contains(f.id) { expanded.remove(f.id) } else { expanded.insert(f.id) }
     }
 
     /// Ticks or unticks every finding currently shown.

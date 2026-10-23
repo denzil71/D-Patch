@@ -7,6 +7,12 @@ enum Main {
         if CommandLine.arguments.contains("--scan") {
             exit(Scanner.runHeadless())
         }
+        #if DEBUG
+        if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
+            MainActor.assumeIsolated { Snapshot.render(to: CommandLine.arguments[i + 1]) }
+            exit(0)
+        }
+        #endif
         if CommandLine.arguments.contains("--script") {
             // Script for every finding of the last scan, e.g. `DPatch --script > patch.sh`.
             guard let r = Storage.load(ScanResult.self, from: Storage.resultsURL) else {
