@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @State private var script: GeneratedScript?
+    @State private var patch: PatchRequest?
 
     var body: some View {
         NavigationSplitView {
@@ -23,19 +23,19 @@ struct ContentView: View {
                 .help("Scan this Mac against the CVE database (⌘R)")
 
                 Button {
-                    script = GeneratedScript(text: ScriptGenerator.script(for: model.checkedFindings))
+                    patch = PatchRequest(findings: model.checkedFindings)
                 } label: {
-                    Label(model.checked.isEmpty ? "Generate" : "Generate (\(model.checked.count))",
-                          systemImage: "terminal")
+                    Label(model.checked.isEmpty ? "Patch Selected" : "Patch Selected (\(model.checked.count))",
+                          systemImage: "bandage")
                         .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.checked.isEmpty)
-                .help("Create a bash script that installs the fixes for the ticked CVEs")
+                .help("Download and install the fixes for the ticked CVEs")
             }
         }
         .safeAreaInset(edge: .bottom) { StatusBar() }
-        .sheet(item: $script) { ScriptSheet(script: $0) }
+        .sheet(item: $patch) { PatchSheet(request: $0) { model.checked.removeAll() } }
         .alert("Scan failed", isPresented: Binding(get: { model.errorMessage != nil },
                                                    set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK", role: .cancel) {}

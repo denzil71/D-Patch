@@ -19,7 +19,9 @@ enum Main {
                 FileHandle.standardError.write(Data("No scan results yet; run with --scan first.\n".utf8))
                 exit(1)
             }
-            print(ScriptGenerator.script(for: r.findings), terminator: "")
+            let unattended = CommandLine.arguments.contains("--no-confirm")
+            print(ScriptGenerator.script(for: r.findings, confirm: !unattended,
+                                         rescan: unattended ? Bundle.main.executablePath : nil), terminator: "")
             exit(0)
         }
         DPatchApp.main()

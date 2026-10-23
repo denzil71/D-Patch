@@ -2,7 +2,10 @@ import Foundation
 
 /// Builds a bash script that installs the fixes for the selected findings.
 enum ScriptGenerator {
-    static func script(for findings: [Finding], date: Date = Date()) -> String {
+    /// `confirm`: ask before changing anything (the app asks itself before it runs a script).
+    /// `rescan`: path of the D-Patch executable to rescan with afterwards, so the app's list refreshes.
+    static func script(for findings: [Finding], confirm: Bool = true, rescan: String? = nil,
+                       date: Date = Date()) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
         let os = Inventory.macOSItem().version
@@ -20,18 +23,7 @@ enum ScriptGenerator {
             lines.append(line.components(separatedBy: .newlines).joined(separator: " "))
         }
 
-        // One action per fix target, even when it closes several CVEs.
-        var fixes: [Fix] = []
-        for f in findings where !fixes.contains(where: { $0.method == f.fix.method && $0.target == f.fix.target }) {
-            fixes.append(f.fix)
-        }
-        // A newer macOS update includes the fixes of an older one; install only the newest.
-        let macOS = fixes.filter { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") }
-        if let newest = macOS.max(by: { Version.isLess($0.toVersion, $1.toVersion) }) {
-            fixes.removeAll { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") && $0.target != newest.target }
-        }
-        let order: [FixMethod] = [.brewFormula, .brewCask, .brewCaskReplace, .appStore, .softwareUpdate]
-        fixes.sort { (order.firstIndex(of: $0.method)!, $0.target) < (order.firstIndex(of: $1.method)!, $1.target) }
+        let fixes = self.fixes(for: findings)
         let needsBrew = fixes.contains { [.brewFormula, .brewCask, .brewCaskReplace, .appStore].contains($0.method) }
 
         lines += [
@@ -51,12 +43,14 @@ enum ScriptGenerator {
             "echo \"D-Patch will apply \(fixes.count) update(s):\"",
         ]
         for fix in fixes { lines.append("echo \"  - \(escapeDQ(fix.summary))\"") }
-        lines += [
-            "if [[ \"${1:-}\" != \"-y\" ]]; then",
-            "  read -r -p \"Continue? [y/N] \" answer",
-            "  [[ \"$answer\" =~ ^[Yy]$ ]] || { echo \"Cancelled.\"; exit 0; }",
-            "fi",
-        ]
+        if confirm {
+            lines += [
+                "if [[ \"${1:-}\" != \"-y\" ]]; then",
+                "  read -r -p \"Continue? [y/N] \" answer",
+                "  [[ \"$answer\" =~ ^[Yy]$ ]] || { echo \"Cancelled.\"; exit 0; }",
+                "fi",
+            ]
+        }
 
         if needsBrew {
             lines += [
@@ -89,6 +83,10 @@ enum ScriptGenerator {
             lines.append("run " + command(for: fix, brew: "\"$BREW\"", mas: "\"$MAS\""))
         }
 
+        if let exe = rescan {
+            lines += ["", "echo", "echo \"==> Rescanning so D-Patch shows what is still open…\"",
+                      "\(shellQuote(exe)) --scan | tail -1"]
+        }
         lines += [
             "",
             "echo",
@@ -103,6 +101,22 @@ enum ScriptGenerator {
             lines.append("echo \"Apple updates may need a restart to take effect.\"")
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// One action per fix target, even when it closes several CVEs, in the order the script runs them.
+    static func fixes(for findings: [Finding]) -> [Fix] {
+        var fixes: [Fix] = []
+        for f in findings where !fixes.contains(where: { $0.method == f.fix.method && $0.target == f.fix.target }) {
+            fixes.append(f.fix)
+        }
+        // A newer macOS update includes the fixes of an older one; install only the newest.
+        let macOS = fixes.filter { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") }
+        if let newest = macOS.max(by: { Version.isLess($0.toVersion, $1.toVersion) }) {
+            fixes.removeAll { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") && $0.target != newest.target }
+        }
+        let order: [FixMethod] = [.brewFormula, .brewCask, .brewCaskReplace, .appStore, .softwareUpdate]
+        fixes.sort { (order.firstIndex(of: $0.method)!, $0.target) < (order.firstIndex(of: $1.method)!, $1.target) }
+        return fixes
     }
 
     /// The shell command that applies one fix, as run by the script and shown in the app.
