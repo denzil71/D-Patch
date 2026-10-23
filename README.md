@@ -1,12 +1,12 @@
 # D-Patch
 
-A macOS app that checks the software on this Mac against critical and high CVEs from the NVD (National Vulnerability Database) and lists the ones that have an installable fix. Tick the CVEs you want to patch and click **Patch Selected** to install the updates.
+A macOS app that checks the software on this Mac against CVEs from the NVD (National Vulnerability Database) and lists the ones that have an installable fix. Tick the CVEs you want to patch and click **Patch Selected** to install the updates.
 
 ## Features
 
 ### Scanning
 - **Inventory** — Homebrew formulae and casks, apps in `/Applications`, `/Applications/Utilities` and `~/Applications` (including Mac App Store apps), and macOS itself.
-- **CVE source** — the NVD 2.0 API, filtered to CVSS v3 `CRITICAL` and `HIGH`, for CVEs published in the last 30–365 days (90 by default). Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json`, so later scans fetch only what is new or changed.
+- **CVE source** — the NVD 2.0 API, filtered to the CVSS v3 severity levels ticked in **Settings › Severity** (Critical and High by default; Medium and Low optional), for CVEs published in the last 30–365 days (90 by default). Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json`, so later scans fetch only what is new or changed; ticking another level fetches just that level, and unticking one drops it from the cache.
 - **Matching** — CVE product names (from NVD CPE configurations and the CNA's affected-product data) are matched to installed items, and the installed version must fall inside an affected range.
 - **Fixes only** — a CVE is listed only if an update exists that moves the item past the fixed version:
   - Homebrew formula or cask → `brew upgrade`
@@ -15,7 +15,7 @@ A macOS app that checks the software on this Mac against critical and high CVEs 
   - macOS, Safari and other Apple software → `softwareupdate --install`
 
 ### Window
-- **Left** — dates on which CVEs were published, each with a count of critical (red) and high (orange) CVEs. **All dates** shows everything.
+- **Left** — dates on which CVEs were published, each with a count of CVEs per severity: critical (red), high (orange), medium (yellow) and low (grey). **All dates** shows everything.
 - **Right** — the CVEs for the selected date. Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector and links. Search by CVE ID, app or keyword.
 - **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 

@@ -52,6 +52,14 @@ enum Prefs {
         get { d.object(forKey: "lookbackDays") as? Int ?? 90 }
         set { d.set(newValue, forKey: "lookbackDays") }
     }
+    /// CVE severity levels to scan for, stored as "CRITICAL,HIGH".
+    static var severities: [Severity] {
+        get {
+            let list = (d.string(forKey: "severities") ?? "").split(separator: ",").compactMap { Severity(rawValue: String($0)) }
+            return list.isEmpty ? Severity.defaults : list.sorted(by: >)
+        }
+        set { d.set(newValue.sorted(by: >).map(\.rawValue).joined(separator: ","), forKey: "severities") }
+    }
     static var nvdAPIKey: String {
         get { d.string(forKey: "nvdAPIKey") ?? "" }
         set { d.set(newValue, forKey: "nvdAPIKey") }

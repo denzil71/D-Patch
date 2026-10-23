@@ -54,8 +54,9 @@ struct DateSidebar: View {
                 HStack {
                     Label("All dates", systemImage: "calendar")
                     Spacer()
-                    CountBadges(critical: model.days.map(\.critical).reduce(0, +),
-                                high: model.days.map(\.high).reduce(0, +))
+                    CountBadges(counts: model.days.reduce(into: [:]) { total, d in
+                        total.merge(d.counts, uniquingKeysWith: +)
+                    })
                 }
                 .tag(DayFilter.all)
             }
@@ -64,7 +65,7 @@ struct DateSidebar: View {
                     HStack {
                         Text(d.day, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated).year())
                         Spacer()
-                        CountBadges(critical: d.critical, high: d.high)
+                        CountBadges(counts: d.counts)
                     }
                     .tag(DayFilter.day(d.day))
                 }
@@ -75,13 +76,15 @@ struct DateSidebar: View {
 }
 
 struct CountBadges: View {
-    var critical: Int
-    var high: Int
+    var counts: [Severity: Int]
 
     var body: some View {
         HStack(spacing: 4) {
-            if critical > 0 { Badge(text: "\(critical)", color: .red).help("\(critical) critical") }
-            if high > 0 { Badge(text: "\(high)", color: .orange).help("\(high) high") }
+            ForEach(Severity.allCases.reversed(), id: \.self) { s in
+                if let n = counts[s], n > 0 {
+                    Badge(text: "\(n)", color: s.color).help("\(n) \(s.label.lowercased())")
+                }
+            }
         }
     }
 }
@@ -109,7 +112,7 @@ struct StatusBar: View {
                 ProgressView().controlSize(.small)
                 Text(model.status).lineLimit(1).truncationMode(.middle)
             } else if let r = model.result {
-                Text("Last scan \(r.scannedAt.formatted(date: .abbreviated, time: .shortened)) · \(r.itemsChecked) installed items · \(r.cvesChecked) critical/high CVEs from the last \(r.lookbackDays) days")
+                Text("Last scan \(r.scannedAt.formatted(date: .abbreviated, time: .shortened)) · \(r.itemsChecked) installed items · \(r.cvesChecked) \((r.severities ?? Severity.defaults).map { $0.label.lowercased() }.joined(separator: "/")) CVEs from the last \(r.lookbackDays) days")
                     .lineLimit(1)
                 if !r.warnings.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")

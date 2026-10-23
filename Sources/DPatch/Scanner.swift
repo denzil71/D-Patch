@@ -10,7 +10,9 @@ enum Scanner {
         let items = await Inventory.collect(warnings: &warnings)
 
         let lookback = min(max(Prefs.lookbackDays, 7), 365)
-        let cves = try await NVDClient(apiKey: Prefs.nvdAPIKey, progress: progress).update(lookbackDays: lookback)
+        let severities = Prefs.severities
+        let cves = try await NVDClient(apiKey: Prefs.nvdAPIKey, severities: severities, progress: progress)
+            .update(lookbackDays: lookback)
 
         progress("Matching \(cves.count) CVEs against \(items.count) installed items…")
         let matcher = Matcher(cves: cves)
@@ -30,7 +32,7 @@ enum Scanner {
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
 
-        let result = ScanResult(scannedAt: Date(), lookbackDays: lookback, cvesChecked: cves.count,
+        let result = ScanResult(scannedAt: Date(), lookbackDays: lookback, severities: severities, cvesChecked: cves.count,
                                 itemsChecked: items.count, findings: findings,
                                 warnings: warnings + resolver.warnings)
         try Storage.save(result, to: Storage.resultsURL)
@@ -51,7 +53,7 @@ enum Scanner {
                 print("Scan complete: \(all) fixable CVEs (\(crit) critical) across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked.")
                 r.warnings.forEach { print("warning: \($0)") }
                 if Prefs.notifyAfterAutoscan, CommandLine.arguments.contains("--notify") {
-                    notify(all == 0 ? "No fixable critical/high CVEs found."
+                    notify(all == 0 ? "No fixable CVEs found."
                                     : "\(all) fixable CVEs found (\(crit) critical). Open D-Patch to review.")
                 }
             } catch {
