@@ -144,7 +144,8 @@ enum ScriptGenerator {
             case .appStore:
                 steps.append("Update **\(name(fix))** to \(to) from the Mac App Store.")
             case .softwareUpdate:
-                steps.append("Install **\(name(fix)) \(to)** with Apple Software Update. It asks for your administrator password, and the Mac may need to restart.")
+                let notes = fix.notesLink.map { " [Read Apple's notes](\($0.url.absoluteString))" } ?? ""
+                steps.append("Install **\(name(fix)) \(to)** with Apple Software Update. It asks for your administrator password, and the Mac may need to restart.\(notes)")
             }
         }
         if rescan {

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Debug builds only: `DPatch --snapshot out.png [--expand N]` renders the main window offscreen
 /// from the saved results, with the Nth finding (default 0) expanded, to check layout without a screen.
-/// `--patch-sheet` renders the Patch sheet for every finding instead.
+/// `--patch-sheet` renders the Patch sheet for every finding instead (`--show-script` opens its Script section).
 enum Snapshot {
     @MainActor
     static func render(to path: String) {
@@ -14,9 +14,9 @@ enum Snapshot {
         let index = args.firstIndex(of: "--expand").flatMap { Int(args[safe: $0 + 1] ?? "") } ?? 0
         if let f = model.visible[safe: index] { model.expanded.insert(f.id) }
 
-        let size = NSSize(width: 1100, height: 760)
+        let size = args.contains("--patch-sheet") ? NSSize(width: 680, height: 900) : NSSize(width: 1100, height: 760)
         let root: AnyView = args.contains("--patch-sheet")
-            ? AnyView(PatchSheet(request: PatchRequest(findings: model.findings), showScript: true).frame(width: 680, height: 900)
+            ? AnyView(PatchSheet(request: PatchRequest(findings: model.findings), showScript: args.contains("--show-script")).frame(width: 680, height: 900)
                 .background(Color(nsColor: .windowBackgroundColor)))
             : AnyView(ContentView().environmentObject(model).frame(width: size.width, height: size.height))
         let host = NSHostingView(rootView: root)

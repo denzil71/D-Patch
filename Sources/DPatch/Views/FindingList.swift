@@ -160,6 +160,11 @@ struct FindingDetail: View {
 
             DetailSection(title: "How to fix", systemImage: "wrench.and.screwdriver") {
                 Text(finding.fix.summary).fontWeight(.medium)
+                if let notes = finding.fix.notesLink {
+                    Link(notes.title, destination: notes.url)
+                        .font(.callout)
+                        .help(notes.url.absoluteString)
+                }
                 HStack(alignment: .top, spacing: 8) {
                     Text(command)
                         .font(.system(.callout, design: .monospaced))

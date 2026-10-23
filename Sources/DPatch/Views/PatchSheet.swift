@@ -40,6 +40,13 @@ struct PatchSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(fixes, id: \.self) { fix in
                         Label(fix.summary, systemImage: icon(fix.method))
+                        if let notes = fix.notesLink {
+                            Link("Read \(notes.title.replacingOccurrences(of: "Apple: ", with: "Apple's notes: "))",
+                                 destination: notes.url)
+                                .font(.callout)
+                                .padding(.leading, 28)
+                                .help(notes.url.absoluteString)
+                        }
                     }
                 }
                 .padding(.leading, 4)

@@ -75,6 +75,18 @@ struct Fix: Codable, Hashable {
     var target: String
     var toVersion: String
     var summary: String
+    /// Apple's security notes for the update ("About the security content of macOS Tahoe 26.7").
+    var notesURL: String?
+    var notesTitle: String?
+
+    static let appleSecurityReleases = "https://support.apple.com/en-us/100100"
+
+    /// Where to read about an Apple update: its own notes, or Apple's index of security releases.
+    var notesLink: (url: URL, title: String)? {
+        guard method == .softwareUpdate else { return nil }
+        if let u = notesURL.flatMap(URL.init(string:)) { return (u, notesTitle ?? "Apple security notes") }
+        return URL(string: Self.appleSecurityReleases).map { ($0, "Apple security releases") }
+    }
 }
 
 struct Finding: Codable, Identifiable {

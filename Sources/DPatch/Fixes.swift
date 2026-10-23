@@ -9,9 +9,10 @@ final class FixResolver {
     private var softwareUpdates: [SoftwareUpdate]?
     private var caskByApp: [String: CaskEntry]?
     private var appStore: [String: (id: Int, version: String)?] = [:]
+    private var noteTitles: [String: String]?
     var warnings: [String] = []
 
-    func fix(for item: InventoryItem, ranges: [ProductRange]) async -> Fix? {
+    func fix(for item: InventoryItem, ranges: [ProductRange], references: [String] = []) async -> Fix? {
         guard let installed = Version(item.version) else { return nil }
         func fixes(_ candidate: String?) -> String? {
             guard let c = candidate, let v = Version(c), v > installed,
@@ -29,7 +30,7 @@ final class FixResolver {
             return Fix(method: .brewCask, target: token, toVersion: to,
                        summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
         case .macos:
-            return await softwareUpdateFix(item, matching: { $0.hasPrefix("macOS") }, fixes)
+            return await softwareUpdateFix(item, references: references, matching: { $0.hasPrefix("macOS") }, fixes)
         case .app:
             if let token = item.caskToken {
                 guard let to = fixes(item.latestVersion) else { return nil }
@@ -43,7 +44,8 @@ final class FixResolver {
                            summary: "Mac App Store: update \(item.name) \(item.version) → \(to)")
             }
             if item.bundleID?.hasPrefix("com.apple.") == true {
-                return await softwareUpdateFix(item, matching: { $0.localizedCaseInsensitiveContains(item.name) }, fixes)
+                return await softwareUpdateFix(item, references: references,
+                                              matching: { $0.localizedCaseInsensitiveContains(item.name) }, fixes)
             }
             guard let file = item.path.map({ ($0 as NSString).lastPathComponent }),
                   let cask = await caskCatalog()[file], let to = fixes(cask.version) else { return nil }
@@ -55,7 +57,7 @@ final class FixResolver {
     /// Cask versions carry a build after a comma ("4.95.0,242831"); show only the version.
     static func plain(_ v: String) -> String { v.split(separator: ",").first.map(String.init) ?? v }
 
-    private func softwareUpdateFix(_ item: InventoryItem, matching: (String) -> Bool,
+    private func softwareUpdateFix(_ item: InventoryItem, references: [String], matching: (String) -> Bool,
                                    _ fixes: (String?) -> String?) async -> Fix? {
         // Smallest update that fixes it, so a point release wins over a major upgrade.
         let candidates = await loadSoftwareUpdates()
@@ -64,8 +66,50 @@ final class FixResolver {
         guard let u = candidates.first else { return nil }
         let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
         let note = item.kind == .macos && major(u.version) != major(item.version) ? " — major macOS upgrade" : ""
+        let notes = await appleNotes(references, product: item.kind == .macos ? "macOS" : item.name, version: u.version)
         return Fix(method: .softwareUpdate, target: u.label, toVersion: u.version,
-                   summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(u.version))\(note)")
+                   summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(u.version))\(note)",
+                   notesURL: notes?.url, notesTitle: notes?.title)
+    }
+
+    /// Of a CVE's support.apple.com references, the security notes for this product and update:
+    /// "About the security content of macOS Tahoe 26.7" matches macOS 26.7.1, not 27.0.1 or iOS 26.7.
+    private func appleNotes(_ references: [String], product: String, version: String) async -> (url: String, title: String)? {
+        guard let target = Version(version) else { return nil }
+        var best: (url: String, title: String, depth: Int)?
+        for url in references where url.contains("support.apple.com") {
+            guard let raw = await appleNoteTitle(url) else { continue }
+            let title = raw.replacingOccurrences(of: " - Apple Support", with: "")
+                .replacingOccurrences(of: "About the security content of ", with: "")
+            guard title.localizedCaseInsensitiveContains(product),
+                  let v = title.split(separator: " ").last.map(String.init), let nv = Version(v) else { continue }
+            // The note's version must be a prefix of the update's: 26.7 for 26.7.1, 27 for 27.0.1.
+            let depth = nv.parts.count
+            guard depth <= target.parts.count, Array(target.parts.prefix(depth)) == nv.parts else { continue }
+            if depth > best?.depth ?? 0 { best = (url, "Apple: security content of \(title)", depth) }
+        }
+        return best.map { ($0.url, $0.title) }
+    }
+
+    /// Page titles of Apple security notes, cached on disk (the pages don't change).
+    private func appleNoteTitle(_ url: String) async -> String? {
+        let cacheURL = Storage.base.appendingPathComponent("apple-notes.json")
+        if noteTitles == nil { noteTitles = Storage.load([String: String].self, from: cacheURL) ?? [:] }
+        if let t = noteTitles?[url] { return t }
+        guard let u = URL(string: url) else { return nil }
+        var req = URLRequest(url: u, timeoutInterval: 30)
+        // support.apple.com serves an empty page to clients that don't look like a browser.
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) D-Patch", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        let html = String(decoding: data, as: UTF8.self)
+        guard let r = html.range(of: #"<title[^>]*>[^<]*"#, options: .regularExpression) else { return nil }
+        let title = String(html[r]).replacingOccurrences(of: #"<title[^>]*>"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&nbsp;", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        noteTitles?[url] = title
+        try? Storage.save(noteTitles, to: cacheURL)
+        return title
     }
 
     private func loadSoftwareUpdates() async -> [SoftwareUpdate] {
