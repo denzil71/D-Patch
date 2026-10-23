@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Builds build/D-Patch.app. Usage: ./build.sh [--install]   (--install copies it to /Applications)
+# Builds a universal (Apple Silicon + Intel) D-Patch.app into ./build.
+# Usage: ./build.sh [--install] [--dmg]
+#   --install  also copy it to /Applications
+#   --dmg      also package it as dist/D-Patch-<version>.dmg (unsigned)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -7,12 +10,26 @@ VERSION="0.1.0"
 BUILD_NUMBER="1"
 APP="build/D-Patch.app"
 
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/DPatch"
+INSTALL=0
+DMG=0
+for arg in "$@"; do
+    case "$arg" in
+        --install) INSTALL=1 ;;
+        --dmg) DMG=1 ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+# One build per architecture, then merged with lipo (a multi-arch `swift build` needs full Xcode).
+BINS=()
+for TRIPLE in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
+    swift build -c release --triple "$TRIPLE"
+    BINS+=("$(swift build -c release --triple "$TRIPLE" --show-bin-path)/DPatch")
+done
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/DPatch"
+lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/DPatch"
 
 ICONSET="build/AppIcon.iconset"
 rm -rf "$ICONSET"
@@ -44,7 +61,19 @@ xattr -cr "$APP"   # Finder/provenance attributes make codesign fail
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
-if [[ "${1:-}" == "--install" ]]; then
+if (( DMG )); then
+    DMG_PATH="dist/D-Patch-$VERSION.dmg"
+    # Disk image with the app and an Applications shortcut to drag it onto.
+    STAGE=$(mktemp -d)
+    cp -R "$APP" "$STAGE/"
+    ln -s /Applications "$STAGE/Applications"
+    mkdir -p dist
+    hdiutil create -volname "D-Patch $VERSION" -srcfolder "$STAGE" -format UDZO -ov "$DMG_PATH" >/dev/null
+    rm -rf "$STAGE"
+    echo "Built $DMG_PATH"
+fi
+
+if (( INSTALL )); then
     rm -rf "/Applications/D-Patch.app"
     cp -R "$APP" /Applications/
     echo "Installed /Applications/D-Patch.app"
