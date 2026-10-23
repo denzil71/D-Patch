@@ -1,6 +1,6 @@
 # D-Patch
 
-A macOS app that checks the software on this Mac against critical and high CVEs from the NVD (National Vulnerability Database) and lists the ones that have an installable fix. Tick the CVEs you want to patch and click **Generate** to get a bash script that installs the updates.
+A macOS app that checks the software on this Mac against critical and high CVEs from the NVD (National Vulnerability Database) and lists the ones that have an installable fix. Tick the CVEs you want to patch and click **Patch Selected** to install the updates.
 
 ## Features
 
@@ -17,7 +17,7 @@ A macOS app that checks the software on this Mac against critical and high CVEs 
 ### Window
 - **Left** — dates on which CVEs were published, each with a count of critical (red) and high (orange) CVEs. **All dates** shows everything.
 - **Right** — the CVEs for the selected date. Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector and links. Search by CVE ID, app or keyword.
-- **Generate** — builds a bash script for the ticked CVEs. Review it, copy it or save it (to `~/Downloads` by default) and run it in Terminal. It lists the updates and asks before it changes anything (`-y` skips the prompt); a failed update does not stop the rest.
+- **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 
 ### Automatic scan
 **Settings › Automatic scan** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`.
@@ -36,6 +36,12 @@ Command-line scan, without the window:
 
 ```bash
 build/D-Patch.app/Contents/MacOS/DPatch --scan
+```
+
+Patch script for every finding of the last scan (`--no-confirm` drops the prompt and rescans at the end):
+
+```bash
+build/D-Patch.app/Contents/MacOS/DPatch --script > patch.sh
 ```
 
 Set `DPATCH_HOME` to keep the cache and results somewhere other than `~/Library/Application Support/D-Patch`.
