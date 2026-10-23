@@ -6,6 +6,23 @@ enum DayFilter: Hashable {
     case day(Date)
 }
 
+/// Fix sources the list can be filtered by.
+enum FixKind: String, CaseIterable, Identifiable {
+    case homebrew = "Homebrew"
+    case appStore = "App Store"
+    case apple = "Apple Software Update"
+
+    var id: String { rawValue }
+
+    init(_ method: FixMethod) {
+        switch method {
+        case .brewFormula, .brewCask, .brewCaskReplace: self = .homebrew
+        case .appStore: self = .appStore
+        case .softwareUpdate: self = .apple
+        }
+    }
+}
+
 struct DaySummary: Identifiable {
     var day: Date
     /// Distinct CVEs per severity published that day.
@@ -23,6 +40,10 @@ final class AppModel: ObservableObject {
     @Published var checked: Set<String> = []
     @Published var expanded: Set<String> = []
     @Published var search = ""
+    /// List filters; an empty severity set shows every level.
+    @Published var severityFilter: Set<Severity> = []
+    @Published var fixFilter: FixKind?
+    @Published var hideMajorUpgrades = false
 
     private var observer: NSObjectProtocol?
 
@@ -71,15 +92,35 @@ final class AppModel: ObservableObject {
     var days: [DaySummary] {
         let cal = Calendar.current
         var byDay: [Date: [String: Severity]] = [:]
-        for f in findings { byDay[cal.startOfDay(for: f.cve.published), default: [:]][f.cve.id] = f.cve.severity }
+        for f in filtered { byDay[cal.startOfDay(for: f.cve.published), default: [:]][f.cve.id] = f.cve.severity }
         return byDay.map { day, cves in
             DaySummary(day: day, counts: Dictionary(grouping: cves.values, by: { $0 }).mapValues(\.count))
         }
         .sorted { $0.day > $1.day }
     }
 
+    var filtersActive: Bool { !severityFilter.isEmpty || fixFilter != nil || hideMajorUpgrades }
+
+    func clearFilters() {
+        severityFilter = []
+        fixFilter = nil
+        hideMajorUpgrades = false
+    }
+
+    /// Severity levels present in the results, highest first.
+    var severitiesFound: [Severity] { Set(findings.map(\.cve.severity)).sorted(by: >) }
+
+    /// Findings that pass the severity, fix and major-upgrade filters (all dates).
+    var filtered: [Finding] {
+        findings.filter { f in
+            (severityFilter.isEmpty || severityFilter.contains(f.cve.severity))
+                && (fixFilter == nil || FixKind(f.fix.method) == fixFilter)
+                && !(hideMajorUpgrades && f.isMajorUpgrade)
+        }
+    }
+
     var visible: [Finding] {
-        var list = findings
+        var list = filtered
         if case .day(let d)? = filter {
             list = list.filter { Calendar.current.isDate($0.cve.published, inSameDayAs: d) }
         }
@@ -94,6 +135,13 @@ final class AppModel: ObservableObject {
     }
 
     var checkedFindings: [Finding] { findings.filter { checked.contains($0.id) } }
+
+    /// Ticked findings the current filters or date hide.
+    var hiddenCheckedCount: Int { checked.subtracting(visible.map(\.id)).count }
+
+    func toggleSeverityFilter(_ s: Severity) {
+        if severityFilter.contains(s) { severityFilter.remove(s) } else { severityFilter.insert(s) }
+    }
 
     func toggle(_ f: Finding) {
         if checked.contains(f.id) { checked.remove(f.id) } else { checked.insert(f.id) }

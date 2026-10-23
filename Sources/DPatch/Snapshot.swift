@@ -5,7 +5,7 @@ import SwiftUI
 /// Debug builds only: `DPatch --snapshot out.png [--expand N]` renders the main window offscreen
 /// from the saved results, with the Nth finding (default 0) expanded, to check layout without a screen.
 /// `--patch-sheet` renders the Patch sheet for every finding instead (`--show-script` opens its Script section);
-/// `--settings` renders the Settings pane.
+/// `--settings` renders the Settings pane. `--show-levels`, `--fix` and `--hide-major` set the list filters.
 enum Snapshot {
     @MainActor
     static func render(to path: String) {
@@ -13,6 +13,14 @@ enum Snapshot {
         let model = AppModel()
         let args = CommandLine.arguments
         let index = args.firstIndex(of: "--expand").flatMap { Int(args[safe: $0 + 1] ?? "") } ?? 0
+        // Filter states: --show-levels HIGH,LOW  --fix apple|homebrew|appStore  --hide-major
+        if let i = args.firstIndex(of: "--show-levels"), let v = args[safe: i + 1] {
+            model.severityFilter = Set(v.split(separator: ",").compactMap { Severity(rawValue: String($0)) })
+        }
+        if let i = args.firstIndex(of: "--fix"), let v = args[safe: i + 1] {
+            model.fixFilter = ["homebrew": .homebrew, "appStore": .appStore, "apple": .apple][v]
+        }
+        model.hideMajorUpgrades = args.contains("--hide-major")
         if let f = model.visible[safe: index] { model.expanded.insert(f.id) }
 
         if args.contains("--settings") {
