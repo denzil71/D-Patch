@@ -40,6 +40,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+xattr -cr "$APP"   # Finder/provenance attributes make codesign fail
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
