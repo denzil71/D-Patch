@@ -31,24 +31,26 @@ Without a key the NVD allows 5 requests per 30 seconds. A free key ([request one
 ### What you need
 
 - **macOS 14 or later.**
-- **Apple's Command Line Tools**, which provide everything `build.sh` uses (`swift`, `lipo`, `codesign`). Full Xcode isn't needed, but it works too. `Package.swift` needs Swift 5.9 or later, so use Command Line Tools 15 or later.
+- **Xcode**, free from the Mac App Store. The Command Line Tools alone aren't enough: the HighlightSwift package used for the Patch sheet's script highlighting needs SwiftUI macro plugins (`@Entry`, `#Preview`) that only Xcode includes. When Xcode asks which platforms to install, **macOS** is all you need. It takes about 10–12 GB once installed, and the install needs more free space than that while it unpacks.
 
-That's all. The project has no package dependencies, and you don't need an Apple Developer account because the app is signed ad hoc. You don't need Homebrew or Rosetta to build; the Intel half of the universal app is compiled but never run during the build.
+You don't need an Apple Developer account, because the app is signed ad hoc. You don't need Homebrew or Rosetta to build either; the Intel half of the universal app is compiled but never run during the build. The first build downloads HighlightSwift from GitHub, so it needs an internet connection.
 
-To install the tools, run this and click **Install** in the dialog that appears:
+After installing Xcode, make it the active toolchain and accept its licence (both ask for your password), then let it finish setting up:
 
 ```bash
-xcode-select --install
+sudo xcode-select --switch /Applications/Xcode.app
+sudo xcodebuild -license accept
+xcodebuild -runFirstLaunch
 ```
 
-If it says the tools are already installed, check that they work. Both commands should print a result without an error:
+Check it's active. Both commands should print a result without an error:
 
 ```bash
-xcode-select -p    # the active tools, e.g. /Library/Developer/CommandLineTools
+xcode-select -p    # should be /Applications/Xcode.app/Contents/Developer
 swift --version    # should be 5.9 or later
 ```
 
-Known to work with Command Line Tools 26.2 (Swift 6.2.3).
+Known to work with Xcode 27.2 (Swift 6.4.2) and, on GitHub Actions, Xcode 26.6.
 
 ### Build
 
@@ -64,18 +66,13 @@ The first build takes a minute or so, because it compiles for each architecture.
 
 ### If the build fails
 
-- **`xcrun: error: invalid active developer path`, or `No developer tools were found`** — the tools are missing or were removed. Run `xcode-select --install`.
-- **`this SDK is not supported by the compiler`, or `failed to build module`** — the compiler and the macOS SDK don't match, which usually happens after a macOS update. Install any Command Line Tools update in **System Settings › General › Software Update**. If none is offered, reinstall the tools:
-
-  ```bash
-  sudo rm -rf /Library/Developer/CommandLineTools
-  xcode-select --install
-  ```
-
-- **`plugin for module 'SwiftUIMacros' not found`** (with `external macro implementation type 'SwiftUIMacros.StateMacro' could not be found`) — Command Line Tools 27.2's macOS SDK needs a SwiftUI macro plugin that only Xcode includes. `build.sh` works around this by building against an older SDK that's still installed (it prints `Note: building against MacOSX26.5.sdk…`). If no older SDK is left, install Xcode and run `sudo xcode-select --switch /Applications/Xcode.app`, or point `SDKROOT` at an older macOS SDK.
+- **`plugin for module 'SwiftUIMacros' not found`** or **`plugin for module 'PreviewsMacros' not found`** (with `external macro implementation type ... could not be found`) — the Command Line Tools are the active toolchain, not Xcode. Install Xcode, then run `sudo xcode-select --switch /Applications/Xcode.app`. Check with `xcode-select -p`.
+- **`xcrun: error: invalid active developer path`, or `No developer tools were found`** — the active developer folder is missing, for example because Xcode was moved or deleted. Run `sudo xcode-select --switch /Applications/Xcode.app` (or wherever Xcode is).
+- **`this SDK is not supported by the compiler`, or `failed to build module`** — the compiler and the macOS SDK don't match, which usually happens after a macOS update. Update Xcode in the App Store, then delete the build folder with `rm -rf .build build` and build again.
 - **`lipo: same architectures (x86_64) found`** — an older `build.sh` with Swift 6.4's SwiftPM, which writes both architectures to the same file. Update to the current `build.sh`.
-- **`package ... is using Swift tools version 5.9.0 but the installed version is ...`** — the tools are too old. Update them as above.
-- **`You have not agreed to the Xcode license agreements`** — Xcode is the active toolchain and its licence hasn't been accepted. Run `sudo xcodebuild -license accept`, or switch to the Command Line Tools with `sudo xcode-select --switch /Library/Developer/CommandLineTools`.
+- **`package ... is using Swift tools version 5.9.0 but the installed version is ...`** — Xcode is too old. Update it in the App Store.
+- **`You have not agreed to the Xcode license agreements`** — run `sudo xcodebuild -license accept`.
+- **An error about cloning or fetching `HighlightSwift`** — the first build couldn't download it from GitHub. Check your internet connection and build again.
 - **`compiled module was created by a different version of the compiler`, or `PCH was compiled with module cache path`** — the build folder is left over from other tools or another location. Delete it with `rm -rf .build build`, then build again.
 - **`Permission denied` running `./build.sh`** — run `chmod +x build.sh`, or `bash build.sh`.
 - **`Permission denied` with `--install`** — writing to `/Applications` needs an administrator account. Copy `build/D-Patch.app` there in Finder, which asks for a password.
