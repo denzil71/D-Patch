@@ -75,7 +75,6 @@ The first build takes a minute or so, because it compiles for each architecture.
 - **`package ... is using Swift tools version 5.9.0 but the installed version is ...`** — the tools are too old. Update them as above.
 - **`You have not agreed to the Xcode license agreements`** — Xcode is the active toolchain and its licence hasn't been accepted. Run `sudo xcodebuild -license accept`, or switch to the Command Line Tools with `sudo xcode-select --switch /Library/Developer/CommandLineTools`.
 - **`compiled module was created by a different version of the compiler`, or `PCH was compiled with module cache path`** — the build folder is left over from other tools or another location. Delete it with `rm -rf .build build`, then build again.
-- **`resource fork, Finder information, or similar detritus not allowed`** — `codesign` rejected the app because iCloud re-tagged it, which can happen when the project is in an iCloud-synced folder such as `~/Documents` or `~/Desktop`. Clone the project to a folder outside iCloud, such as `~/Developer`, and build there.
 - **`Permission denied` running `./build.sh`** — run `chmod +x build.sh`, or `bash build.sh`.
 - **`Permission denied` with `--install`** — writing to `/Applications` needs an administrator account. Copy `build/D-Patch.app` there in Finder, which asks for a password.
 

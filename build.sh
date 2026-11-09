@@ -27,16 +27,19 @@ for TRIPLE in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
     BINS+=("$(swift build -c release --triple "$TRIPLE" --show-bin-path)/DPatch")
 done
 
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/DPatch"
+# Assembled and signed outside the project: in an iCloud-synced folder (e.g. ~/Documents) the
+# File Provider can re-add Finder info to the bundle, which codesign rejects.
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+SIGNED="$WORK/D-Patch.app"
+mkdir -p "$SIGNED/Contents/MacOS" "$SIGNED/Contents/Resources"
+lipo -create "${BINS[@]}" -output "$SIGNED/Contents/MacOS/DPatch"
 
-ICONSET="build/AppIcon.iconset"
-rm -rf "$ICONSET"
+ICONSET="$WORK/AppIcon.iconset"
 swift Scripts/make-icon.swift "$ICONSET"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
 
-cat > "$APP/Contents/Info.plist" <<PLIST
+cat > "$SIGNED/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -57,15 +60,18 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-xattr -cr "$APP"   # Finder/provenance attributes make codesign fail
-codesign --force --sign - "$APP"
+codesign --force --sign - "$SIGNED"
+
+rm -rf "$APP"
+mkdir -p build
+ditto "$SIGNED" "$APP"
 echo "Built $APP"
 
 if (( DMG )); then
     DMG_PATH="dist/D-Patch-$VERSION.dmg"
     # Disk image with the app and an Applications shortcut to drag it onto.
     STAGE=$(mktemp -d)
-    cp -R "$APP" "$STAGE/"
+    ditto "$SIGNED" "$STAGE/D-Patch.app"
     ln -s /Applications "$STAGE/Applications"
     mkdir -p dist
     hdiutil create -volname "D-Patch $VERSION" -srcfolder "$STAGE" -format UDZO -ov "$DMG_PATH" >/dev/null
@@ -75,6 +81,6 @@ fi
 
 if (( INSTALL )); then
     rm -rf "/Applications/D-Patch.app"
-    cp -R "$APP" /Applications/
+    ditto "$SIGNED" /Applications/D-Patch.app
     echo "Installed /Applications/D-Patch.app"
 fi
