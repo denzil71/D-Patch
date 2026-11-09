@@ -6,8 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="0.4.0"
-BUILD_NUMBER="4"
+VERSION="0.4.1"
+BUILD_NUMBER="5"
 APP="build/D-Patch.app"
 
 INSTALL=0
