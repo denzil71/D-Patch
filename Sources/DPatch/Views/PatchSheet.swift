@@ -29,6 +29,7 @@ struct PatchSheet: View {
 
     private var fixes: [Fix] { ScriptGenerator.fixes(for: request.findings) }
     private var cveCount: Int { Set(request.findings.map(\.cve.id)).count }
+    private var isDemo: Bool { FixtureData.isActive }
     private var displayScript: String {
         ScriptGenerator.script(for: request.findings, confirm: false, rescan: Bundle.main.executablePath)
     }
@@ -36,6 +37,13 @@ struct PatchSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Patch selected CVEs").font(.title2.weight(.semibold))
+
+            if isDemo {
+                Label("Demo data — Patch Now is disabled so the dummy fixes are not run.", systemImage: "testtube.2")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let url = launched {
                 Label("Patching in Terminal", systemImage: "terminal").font(.headline)
@@ -125,7 +133,8 @@ struct PatchSheet: View {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                     Button("Patch Now") { patch() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(fixes.isEmpty)
+                        .disabled(fixes.isEmpty || isDemo)
+                        .help(isDemo ? "Patch Now is disabled while D-Patch is showing demo data." : "")
                 } else {
                     Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
                 }
@@ -185,6 +194,7 @@ struct PatchSheet: View {
 
     /// Writes the script as a .command file, which macOS opens and runs in the user's terminal app.
     private func patch() {
+        guard !isDemo else { return }
         let dir = Storage.base.appendingPathComponent("runs")
         let df = DateFormatter()
         df.dateFormat = "yyyyMMdd-HHmmss"

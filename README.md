@@ -117,3 +117,13 @@ build/D-Patch.app/Contents/MacOS/DPatch --script > patch.sh
 ```
 
 Set `DPATCH_HOME` to keep the cache and results somewhere other than `~/Library/Application Support/D-Patch`.
+
+### Demo data
+
+To exercise the UI without waiting for a scan, or when this Mac has no matching CVEs:
+
+```bash
+Scripts/demo.sh
+```
+
+It builds the app if needed, writes dummy CVEs and software to `build/demo`, scans them and opens D-Patch. Use `--scan-only` to stop before opening the app, or `--build` to rebuild first. The app reads the fixtures from `--fixtures` (or `DPATCH_FIXTURES`) and keeps its results under `--home` (or `DPATCH_HOME`); **Patch Now** is disabled while demo data is loaded.
