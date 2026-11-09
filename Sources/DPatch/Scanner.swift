@@ -4,7 +4,22 @@ enum Scanner {
     static let completedNotification = Notification.Name("com.damonmatthews.dpatch.scanCompleted")
 
     /// Full scan: inventory, CVE download, matching, fix lookup. Saves and returns the result.
+    /// With `--fixtures` or `$DPATCH_FIXTURES`, uses that demo data instead.
     static func run(progress: @escaping (String) -> Void) async throws -> ScanResult {
+        let result: ScanResult
+        if let directory = FixtureData.directory {
+            result = try await FixtureData.makeResult(from: directory, progress: progress)
+        } else {
+            result = try await liveScan(progress: progress)
+        }
+        try Storage.save(result, to: Storage.resultsURL)
+        DistributedNotificationCenter.default().postNotificationName(
+            completedNotification, object: nil,
+            userInfo: nil, deliverImmediately: true)
+        return result
+    }
+
+    private static func liveScan(progress: @escaping (String) -> Void) async throws -> ScanResult {
         var warnings: [String] = []
         progress("Taking inventory of installed software…")
         let items = await Inventory.collect(warnings: &warnings)
@@ -34,15 +49,10 @@ enum Scanner {
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
 
-        let result = ScanResult(
+        return ScanResult(
             scannedAt: Date(), lookbackDays: lookback, severities: severities, cvesChecked: cves.count,
             itemsChecked: items.count, findings: findings,
             warnings: warnings + resolver.warnings)
-        try Storage.save(result, to: Storage.resultsURL)
-        DistributedNotificationCenter.default().postNotificationName(
-            completedNotification, object: nil,
-            userInfo: nil, deliverImmediately: true)
-        return result
     }
 
     /// Entry point for `DPatch --scan` (used by the scheduled LaunchAgent).

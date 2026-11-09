@@ -1,10 +1,13 @@
 import Foundation
 
 enum Storage {
-    /// ~/Library/Application Support/D-Patch, or $DPATCH_HOME when set.
+    /// ~/Library/Application Support/D-Patch, or $DPATCH_HOME / --home when set.
     static let base: URL = {
         let url: URL
-        if let home = ProcessInfo.processInfo.environment["DPATCH_HOME"], !home.isEmpty {
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--home"), i + 1 < args.count, !args[i + 1].isEmpty {
+            url = URL(fileURLWithPath: args[i + 1])
+        } else if let home = ProcessInfo.processInfo.environment["DPATCH_HOME"], !home.isEmpty {
             url = URL(fileURLWithPath: home)
         } else {
             url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
