@@ -5,6 +5,7 @@ let package = Package(
     name: "DPatch",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "DPatch", path: "Sources/DPatch")
+        .executableTarget(name: "DPatch", path: "Sources/DPatch"),
+        .testTarget(name: "DPatchTests", dependencies: ["DPatch"], path: "Tests/DPatchTests"),
     ]
 )

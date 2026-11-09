@@ -1,0 +1,63 @@
+# Builds and publishes a GitHub release when a version tag such as v1.2.3 is pushed.
+# The tag must match VERSION in build.sh. Release notes are the annotated tag's message (if any),
+# then GitHub's generated list of changes, then the install instructions (.github/release-footer.md).
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release ${{ github.ref_name }}
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fetch the tag's message
+        # checkout fetches the tagged commit, not the annotated tag object.
+        run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+      - name: Check the tag matches build.sh
+        run: |
+          VERSION=$(sed -nE 's/^VERSION="([^"]+)"$/\1/p' build.sh)
+          if [[ "v$VERSION" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match VERSION=\"$VERSION\" in build.sh. Bump VERSION (and BUILD_NUMBER) first."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Test
+        run: ./test.sh
+      - name: Build
+        run: ./build.sh --dmg
+      - name: Check the app
+        run: |
+          codesign -v build/D-Patch.app
+          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q arm64
+          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q x86_64
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="dist/D-Patch-$VERSION.dmg"
+          SHA=$(shasum -a 256 "$DMG" | cut -d' ' -f1)
+          {
+            if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" == "tag" ]]; then
+              git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$GITHUB_REF_NAME"
+              echo
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" -q .body
+            echo
+            echo
+            sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{SHA256}}/$SHA/g" .github/release-footer.md
+          } > release-notes.md
+          cat release-notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "dist/D-Patch-$VERSION.dmg" \
+            --title "D-Patch $VERSION" --notes-file release-notes.md --verify-tag

@@ -80,6 +80,31 @@ The first build takes a minute or so, because it compiles for each architecture.
 - **`Permission denied` running `./build.sh`** — run `chmod +x build.sh`, or `bash build.sh`.
 - **`Permission denied` with `--install`** — writing to `/Applications` needs an administrator account. Copy `build/D-Patch.app` there in Finder, which asks for a password.
 
+### Tests, formatting and lint
+
+```bash
+./test.sh              # unit tests (Swift Testing)
+Scripts/lint.sh        # checks formatting (swift-format) and lint (SwiftLint)
+Scripts/lint.sh --fix  # reformats the code first, then checks
+```
+
+Formatting follows `.swift-format`; lint rules are in `.swiftlint.yml`. `swift format` comes with the Swift toolchain; SwiftLint is optional locally (`brew install swiftlint`) and is skipped with a note if it isn't installed. SwiftLint warnings are reported but only errors fail.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the format check, lint, tests and a build on every push and pull request, and keeps the built app as a downloadable artifact for 7 days.
+
+### Releasing
+
+1. In a pull request, bump `VERSION` and `BUILD_NUMBER` at the top of `build.sh`, and merge it.
+2. Tag the merged commit on `main` and push the tag. The tag's message becomes the top of the release notes:
+
+   ```bash
+   git switch main && git pull
+   git tag -a v0.4.2 -m "Short summary of what's new"
+   git push origin v0.4.2
+   ```
+
+GitHub Actions (`.github/workflows/release.yml`) then checks the tag matches `VERSION` in `build.sh`, runs the tests, builds the DMG and publishes the release. Its notes are the tag's message, GitHub's list of merged pull requests, then the install instructions from `.github/release-footer.md` with the DMG's SHA-256. Only tags of the form `vX.Y.Z` trigger a release.
+
 ### Running without the window
 
 Command-line scan, without the window:
