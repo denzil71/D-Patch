@@ -1,4 +1,5 @@
 import AppKit
+import HighlightSwift
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -12,9 +13,13 @@ struct PatchSheet: View {
     let request: PatchRequest
     var onLaunched: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showScript: Bool
     @State private var launched: URL?
     @State private var savedTo: URL?
+    /// The script with its bash colours, highlighted as soon as the sheet opens so the Script
+    /// section never appears plain first and then fades the colours in.
+    @State private var scriptText: AttributedString?
 
     init(request: PatchRequest, showScript: Bool = false, onLaunched: @escaping () -> Void = {}) {
         self.request = request
@@ -24,6 +29,9 @@ struct PatchSheet: View {
 
     private var fixes: [Fix] { ScriptGenerator.fixes(for: request.findings) }
     private var cveCount: Int { Set(request.findings.map(\.cve.id)).count }
+    private var displayScript: String {
+        ScriptGenerator.script(for: request.findings, confirm: false, rescan: Bundle.main.executablePath)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -63,23 +71,38 @@ struct PatchSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                DisclosureGroup("Script", isExpanded: $showScript) {
-                    ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
-                        .padding(.vertical, 8)
-                    ScrollView {
-                        Text(
-                            ScriptGenerator.script(
-                                for: request.findings, confirm: false, rescan: Bundle.main.executablePath)
-                        )
-                        .font(.system(.callout, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
+                // A custom disclosure rather than DisclosureGroup: the group gives its content an
+                // unbounded height, so the script's ScrollView could not fill the sheet.
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showScript.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(showScript ? 90 : 0))
+                        Text("Script")
                     }
-                    .frame(height: 260)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(showScript ? "Hide the script" : "Show the script")
+
+                if showScript {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
+                        ScrollView {
+                            Text(scriptText ?? AttributedString(displayScript))
+                                .font(.system(.callout, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                        }
+                        .frame(maxHeight: .infinity)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                    }
                 }
 
                 if let url = savedTo {
@@ -89,7 +112,10 @@ struct PatchSheet: View {
                 }
             }
 
-            Spacer(minLength: 0)
+            // When the script is open its ScrollView takes the spare height instead.
+            if !showScript || launched != nil {
+                Spacer(minLength: 0)
+            }
             HStack {
                 if launched == nil {
                     Button("Save Script…") { save() }
@@ -106,8 +132,30 @@ struct PatchSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 680)
-        .frame(minHeight: 300)
+        .frame(width: sheetWidth, height: sheetHeight)
+        .background(NoInitialFocus())
+        .task(id: "\(colorScheme == .dark)-\(displayScript)") {
+            scriptText = await ScriptHighlighter.attributed(script: displayScript, dark: colorScheme == .dark)
+        }
+    }
+
+    /// Use most of the screen: the script is the main thing to read in this sheet.
+    private var sheetWidth: CGFloat {
+        let available = NSScreen.main?.visibleFrame.width ?? 1200
+        return min(1000, max(700, available - 100))
+    }
+
+    /// Three quarters of the parent window, so the script needs as little scrolling as possible.
+    /// The sheet is tall even while the script is closed: macOS does not resize an already
+    /// presented sheet when its content grows, so changing this when Script is toggled would clip
+    /// the expanded content.
+    private var sheetHeight: CGFloat {
+        let parent = NSApp.windows
+            .filter { !$0.isSheet && $0.isVisible }
+            .max { $0.frame.height < $1.frame.height }
+        let parentHeight = parent?.frame.height ?? (NSScreen.main?.visibleFrame.height ?? 900)
+        let screenMax = ((parent?.screen ?? NSScreen.main)?.visibleFrame.height ?? parentHeight) - 40
+        return min(max(parentHeight * 0.75, 520), screenMax)
     }
 
     private var notes: [String] {
@@ -207,5 +255,60 @@ private struct ScriptSteps: View {
 
     private func lowercasedFirst(_ s: String) -> LocalizedStringKey {
         LocalizedStringKey(s.prefix(1).lowercased() + s.dropFirst())
+    }
+}
+
+/// Clears the sheet's initial keyboard focus. SwiftUI focuses the first focusable control when a
+/// sheet opens, which draws a focus ring on a button the user did not choose.
+private struct NoInitialFocus: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NoInitialFocusView { NoInitialFocusView() }
+    func updateNSView(_: NoInitialFocusView, context _: Context) {}
+}
+
+private final class NoInitialFocusView: NSView {
+    private var observer: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+        guard let window else { return }
+        window.initialFirstResponder = nil
+        clearFocus()
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.clearFocus()
+        }
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    private func clearFocus() {
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeFirstResponder(nil)
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+}
+
+/// Highlights the patch script in bash colours for the current appearance. HighlightSwift's own
+/// `CodeText` view highlights only after it appears, so expanding the Script section first showed
+/// plain text and then faded the colours in; the sheet highlights up front instead and the
+/// section renders coloured on its first frame.
+private enum ScriptHighlighter {
+    private static let highlight = Highlight()
+
+    static func attributed(script: String, dark: Bool) async -> AttributedString? {
+        try? await highlight.attributedText(
+            script, language: .bash,
+            colors: dark ? .dark(.xcode) : .light(.xcode))
     }
 }
