@@ -3,19 +3,28 @@ import Foundation
 enum Storage {
     /// ~/Library/Application Support/D-Patch, or $DPATCH_HOME / --home when set.
     static let base: URL = {
-        let url: URL
-        let args = CommandLine.arguments
-        if let i = args.firstIndex(of: "--home"), i + 1 < args.count, !args[i + 1].isEmpty {
-            url = URL(fileURLWithPath: args[i + 1])
-        } else if let home = ProcessInfo.processInfo.environment["DPATCH_HOME"], !home.isEmpty {
-            url = URL(fileURLWithPath: home)
-        } else {
-            url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("D-Patch")
-        }
+        let url = baseURL(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()
+
+    /// `--home`, then `$DPATCH_HOME`, then ~/Library/Application Support/D-Patch. With demo data
+    /// loaded (`--fixtures` / `$DPATCH_FIXTURES`) and no home given, its Demo subfolder instead, so
+    /// a demo scan never replaces the real results.
+    static func baseURL(arguments args: [String], environment: [String: String]) -> URL {
+        if let i = args.firstIndex(of: "--home"), i + 1 < args.count, !args[i + 1].isEmpty {
+            return URL(fileURLWithPath: args[i + 1])
+        }
+        if let home = environment["DPATCH_HOME"], !home.isEmpty {
+            return URL(fileURLWithPath: home)
+        }
+        let standard = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("D-Patch")
+        if FixtureData.directory(arguments: args, environment: environment) != nil {
+            return standard.appendingPathComponent("Demo")
+        }
+        return standard
+    }
 
     static var cacheURL: URL { base.appendingPathComponent("nvd-cache.json") }
     static var resultsURL: URL { base.appendingPathComponent("results.json") }
