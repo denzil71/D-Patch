@@ -51,11 +51,11 @@ struct FindingList: View {
     }
 
     @ViewBuilder private var emptyState: some View {
-        if !model.search.isEmpty {
+        if !model.findings.isEmpty, !model.search.isEmpty {
             ContentUnavailableView(
                 "No matches", systemImage: "magnifyingglass",
                 description: Text("No CVEs match “\(model.search)”."))
-        } else if model.filtersActive {
+        } else if !model.findings.isEmpty, model.filtersActive {
             ContentUnavailableView {
                 Label("No CVEs match the filters", systemImage: "line.3.horizontal.decrease.circle")
             } actions: {
@@ -301,13 +301,20 @@ private struct FilterBar: View {
                 }
             }
 
-            Picker("Fix", selection: $model.fixFilter) {
-                Text("All fixes").tag(FixKind?.none)
-                Divider()
-                ForEach(FixKind.allCases) { Text($0.rawValue).tag(FixKind?.some($0)) }
+            HStack(spacing: 6) {
+                Text("Fix")
+                Menu {
+                    Toggle("All fixes", isOn: isFixedBy(nil))
+                    Divider()
+                    ForEach(FixKind.allCases) { kind in
+                        Toggle(kind.rawValue, isOn: isFixedBy(kind))
+                    }
+                } label: {
+                    Text(model.fixFilter?.rawValue ?? "All fixes")
+                }
+                .fixedSize()
+                .help("Filter by fix source")
             }
-            .pickerStyle(.menu)
-            .fixedSize()
 
             Toggle("Hide major macOS upgrades", isOn: $model.hideMajorUpgrades)
                 .toggleStyle(.checkbox)
@@ -326,6 +333,14 @@ private struct FilterBar: View {
     }
 
     private func isShown(_ s: Severity) -> Bool { model.severityFilter.isEmpty || model.severityFilter.contains(s) }
+
+    /// Checkmark state for the fix-source menu.
+    private func isFixedBy(_ kind: FixKind?) -> Binding<Bool> {
+        Binding(
+            get: { model.fixFilter == kind },
+            set: { if $0 { model.fixFilter = kind } }
+        )
+    }
 
     /// Chips start all on; clicking hides or shows a level, and the last shown level can't be hidden.
     private func toggle(_ s: Severity) {
