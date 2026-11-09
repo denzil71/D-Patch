@@ -6,11 +6,14 @@ import Foundation
 /// otherwise need the network or `softwareupdate`.
 enum FixtureData {
     static var directory: URL? {
-        let args = CommandLine.arguments
+        directory(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func directory(arguments args: [String], environment: [String: String]) -> URL? {
         if let i = args.firstIndex(of: "--fixtures"), i + 1 < args.count, !args[i + 1].isEmpty {
             return URL(fileURLWithPath: args[i + 1])
         }
-        if let path = ProcessInfo.processInfo.environment["DPATCH_FIXTURES"], !path.isEmpty {
+        if let path = environment["DPATCH_FIXTURES"], !path.isEmpty {
             return URL(fileURLWithPath: path)
         }
         return nil

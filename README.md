@@ -126,4 +126,4 @@ To exercise the UI without waiting for a scan, or when this Mac has no matching 
 Scripts/demo.sh
 ```
 
-It builds the app if needed, writes dummy CVEs and software to `build/demo`, scans them and opens D-Patch. Use `--scan-only` to stop before opening the app, or `--build` to rebuild first. The app reads the fixtures from `--fixtures` (or `DPATCH_FIXTURES`) and keeps its results under `--home` (or `DPATCH_HOME`); **Patch Now** is disabled while demo data is loaded.
+It builds the app if needed, writes dummy CVEs and software to `build/demo`, scans them and opens D-Patch. Use `--scan-only` to stop before opening the app, or `--build` to rebuild first. The app reads the fixtures from `--fixtures` (or `DPATCH_FIXTURES`) and keeps its results under `--home` (or `DPATCH_HOME`). Without a home, demo data uses `~/Library/Application Support/D-Patch/Demo`, so it never replaces your real scan results. **Patch Now** is disabled while demo data is loaded.
