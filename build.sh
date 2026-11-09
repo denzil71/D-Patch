@@ -31,11 +31,14 @@ source Scripts/select-sdk.sh
 # Each binary is copied out straight away: newer SwiftPM (Swift Build) writes every architecture
 # to the same output path.
 BINS=()
+BIN_DIRS=()
 for TRIPLE in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
     swift build -c release --triple "$TRIPLE"
+    BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path)"
     BIN="$WORK/DPatch-${TRIPLE%%-*}"
-    cp "$(swift build -c release --triple "$TRIPLE" --show-bin-path)/DPatch" "$BIN"
+    cp "$BIN_DIR/DPatch" "$BIN"
     BINS+=("$BIN")
+    BIN_DIRS+=("$BIN_DIR")
 done
 
 SIGNED="$WORK/D-Patch.app"
@@ -45,6 +48,16 @@ lipo -create "${BINS[@]}" -output "$SIGNED/Contents/MacOS/DPatch"
 ICONSET="$WORK/AppIcon.iconset"
 swift Scripts/make-icon.swift "$ICONSET"
 iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
+
+# SwiftPM dependency resource bundles (e.g. HighlightSwift's highlight.js) sit next to the
+# built products; Bundle.module finds them in the app's Contents/Resources and would
+# fatalError if they were missing.
+for DIR in "${BIN_DIRS[@]}"; do
+    for BUNDLE in "$DIR"/*.bundle; do
+        [ -e "$BUNDLE" ] || continue
+        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$(basename "$BUNDLE")"
+    done
+done
 
 cat > "$SIGNED/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

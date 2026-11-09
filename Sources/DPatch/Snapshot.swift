@@ -39,22 +39,23 @@
                 }
                 return
             }
-            let size =
-                args.contains("--patch-sheet") ? NSSize(width: 680, height: 900) : NSSize(width: 1100, height: 760)
+            // The patch sheet sizes itself (it takes most of its parent window), so fit the window
+            // to the sheet instead of drawing it into a fixed 680x900 frame.
             let root: AnyView =
                 args.contains("--patch-sheet")
                 ? AnyView(
                     PatchSheet(
                         request: PatchRequest(findings: model.findings), showScript: args.contains("--show-script")
-                    ).frame(width: 680, height: 900)
-                        .background(Color(nsColor: .windowBackgroundColor)))
-                : AnyView(ContentView().environmentObject(model).frame(width: size.width, height: size.height))
+                    ).background(Color(nsColor: .windowBackgroundColor)))
+                : AnyView(ContentView().environmentObject(model).frame(width: 1100, height: 760))
             let host = NSHostingView(rootView: root)
             let window = NSWindow(
-                contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+                contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760), styleMask: [.titled], backing: .buffered,
+                defer: false)
             window.contentView = host
             host.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+            if args.contains("--patch-sheet") { host.setFrameSize(host.fittingSize) }
             host.layoutSubtreeIfNeeded()
 
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
