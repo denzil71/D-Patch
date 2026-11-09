@@ -31,21 +31,27 @@ struct PatchSheet: View {
 
             if let url = launched {
                 Label("Patching in Terminal", systemImage: "terminal").font(.headline)
-                Text("Follow the progress in the Terminal window. When it finishes, D-Patch rescans and this list updates by itself.\n\nScript: \(url.path)")
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "Follow the progress in the Terminal window. When it finishes, D-Patch rescans and this list updates by itself.\n\nScript: \(url.path)"
+                )
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("\(fixes.count) update\(fixes.count == 1 ? "" : "s") will close \(cveCount) CVE\(cveCount == 1 ? "" : "s"):")
+                Text(
+                    "\(fixes.count) update\(fixes.count == 1 ? "" : "s") will close \(cveCount) CVE\(cveCount == 1 ? "" : "s"):"
+                )
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(fixes, id: \.self) { fix in
                         Label(fix.summary, systemImage: icon(fix.method))
                         if let notes = fix.notesLink {
-                            Link("Read \(notes.title.replacingOccurrences(of: "Apple: ", with: "Apple's notes: "))",
-                                 destination: notes.url)
-                                .font(.callout)
-                                .padding(.leading, 28)
-                                .help(notes.url.absoluteString)
+                            Link(
+                                "Read \(notes.title.replacingOccurrences(of: "Apple: ", with: "Apple's notes: "))",
+                                destination: notes.url
+                            )
+                            .font(.callout)
+                            .padding(.leading, 28)
+                            .help(notes.url.absoluteString)
                         }
                     }
                 }
@@ -61,11 +67,14 @@ struct PatchSheet: View {
                     ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
                         .padding(.vertical, 8)
                     ScrollView {
-                        Text(ScriptGenerator.script(for: request.findings, confirm: false, rescan: Bundle.main.executablePath))
-                            .font(.system(.callout, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
+                        Text(
+                            ScriptGenerator.script(
+                                for: request.findings, confirm: false, rescan: Bundle.main.executablePath)
+                        )
+                        .font(.system(.callout, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
                     }
                     .frame(height: 260)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -142,8 +151,14 @@ struct PatchSheet: View {
             return
         }
         guard NSWorkspace.shared.open(url) else {
-            NSAlert(error: NSError(domain: "D-Patch", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "Could not open Terminal. Run the script yourself: bash \(ScriptGenerator.shellQuote(url.path))"])).runModal()
+            NSAlert(
+                error: NSError(
+                    domain: "D-Patch", code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Could not open Terminal. Run the script yourself: bash \(ScriptGenerator.shellQuote(url.path))"
+                    ])
+            ).runModal()
             return
         }
         launched = url

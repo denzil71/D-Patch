@@ -24,20 +24,24 @@ enum Scanner {
             progress("Looking for fixes for \(item.name)…")
             for hit in hits {
                 let installed = Version(item.version)!
-                guard let range = hit.ranges.filter({ $0.contains(installed) })
+                guard
+                    let range = hit.ranges.filter({ $0.contains(installed) })
                         .min(by: { Version.isLess($0.end, $1.end) }),
-                      let fix = await resolver.fix(for: item, ranges: hit.ranges, references: hit.cve.references) else { continue }
+                    let fix = await resolver.fix(for: item, ranges: hit.ranges, references: hit.cve.references)
+                else { continue }
                 findings.append(Finding(cve: hit.cve, item: item, fixedIn: range.fixedInDescription, fix: fix))
             }
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
 
-        let result = ScanResult(scannedAt: Date(), lookbackDays: lookback, severities: severities, cvesChecked: cves.count,
-                                itemsChecked: items.count, findings: findings,
-                                warnings: warnings + resolver.warnings)
+        let result = ScanResult(
+            scannedAt: Date(), lookbackDays: lookback, severities: severities, cvesChecked: cves.count,
+            itemsChecked: items.count, findings: findings,
+            warnings: warnings + resolver.warnings)
         try Storage.save(result, to: Storage.resultsURL)
-        DistributedNotificationCenter.default().postNotificationName(completedNotification, object: nil,
-                                                                     userInfo: nil, deliverImmediately: true)
+        DistributedNotificationCenter.default().postNotificationName(
+            completedNotification, object: nil,
+            userInfo: nil, deliverImmediately: true)
         return result
     }
 
@@ -50,11 +54,15 @@ enum Scanner {
                 let r = try await run { print($0) }
                 let crit = Set(r.findings.filter { $0.cve.severity == .critical }.map(\.cve.id)).count
                 let all = Set(r.findings.map(\.cve.id)).count
-                print("Scan complete: \(all) fixable CVEs (\(crit) critical) across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked.")
-                r.warnings.forEach { print("warning: \($0)") }
+                print(
+                    "Scan complete: \(all) fixable CVEs (\(crit) critical) across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked."
+                )
+                for warning in r.warnings { print("warning: \(warning)") }
                 if Prefs.notifyAfterAutoscan, CommandLine.arguments.contains("--notify") {
-                    notify(all == 0 ? "No fixable CVEs found."
-                                    : "\(all) fixable CVEs found (\(crit) critical). Open D-Patch to review.")
+                    notify(
+                        all == 0
+                            ? "No fixable CVEs found."
+                            : "\(all) fixable CVEs found (\(crit) critical). Open D-Patch to review.")
                 }
             } catch {
                 print("Scan failed: \(error.localizedDescription)")

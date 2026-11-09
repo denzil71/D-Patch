@@ -43,9 +43,11 @@ struct SettingsView: View {
                     .disabled(!autoscanEnabled)
                 Toggle("Show a notification when the scan finishes", isOn: $notify)
                     .disabled(!autoscanEnabled)
-                Text("Runs in the background even when D-Patch is closed. If the Mac is asleep at that time, the scan runs when it wakes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Runs in the background even when D-Patch is closed. If the Mac is asleep at that time, the scan runs when it wakes."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 if let e = scheduleError {
                     Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.caption)
                 }
@@ -62,9 +64,11 @@ struct SettingsView: View {
                     // At least one level has to stay on.
                     .disabled(selectedSeverities == [level])
                 }
-                Text("Scans look for CVEs at the ticked levels. Medium and Low add many more CVEs, so the first scan after ticking them takes longer.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Scans look for CVEs at the ticked levels. Medium and Low add many more CVEs, so the first scan after ticking them takes longer."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("CVE database") {
@@ -72,9 +76,11 @@ struct SettingsView: View {
                     ForEach([30, 60, 90, 120, 180, 365], id: \.self) { Text("\($0) days").tag($0) }
                 }
                 SecureField("NVD API key (optional)", text: $apiKey)
-                Text("Without a key the NVD limits downloads to 5 requests per 30 seconds, so the first scan takes a few minutes. [Request a free key](https://nvd.nist.gov/developers/request-an-api-key)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Without a key the NVD limits downloads to 5 requests per 30 seconds, so the first scan takes a few minutes. [Request a free key](https://nvd.nist.gov/developers/request-an-api-key)"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

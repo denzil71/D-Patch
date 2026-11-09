@@ -22,8 +22,11 @@ struct Version: Comparable, CustomStringConvertible {
         var currentIsDigit = false
         func flush() {
             guard !current.isEmpty else { return }
-            if currentIsDigit, let n = Int(current.prefix(18)) { parts.append(.num(n)) }
-            else { parts.append(.str(current)) }
+            if currentIsDigit, let n = Int(current.prefix(18)) {
+                parts.append(.num(n))
+            } else {
+                parts.append(.str(current))
+            }
             current = ""
         }
         for ch in s {
@@ -54,8 +57,8 @@ struct Version: Comparable, CustomStringConvertible {
             let x = i < a.parts.count ? a.parts[i] : .num(0)
             let y = i < b.parts.count ? b.parts[i] : .num(0)
             switch (x, y) {
-            case let (.num(p), .num(q)): if p != q { return p < q ? -1 : 1 }
-            case let (.str(p), .str(q)): if p != q { return p < q ? -1 : 1 }
+            case (.num(let p), .num(let q)): if p != q { return p < q ? -1 : 1 }
+            case (.str(let p), .str(let q)): if p != q { return p < q ? -1 : 1 }
             // A letter part marks a pre-release ("1.0rc1" < "1.0") or patch suffix; numbers win.
             case (.num, .str): return 1
             case (.str, .num): return -1
@@ -67,7 +70,7 @@ struct Version: Comparable, CustomStringConvertible {
     /// Orders version strings; unparseable ones sort first.
     static func isLess(_ a: String, _ b: String) -> Bool {
         switch (Version(a), Version(b)) {
-        case let (x?, y?): return x < y
+        case (let x?, let y?): return x < y
         case (nil, _?): return true
         default: return false
         }

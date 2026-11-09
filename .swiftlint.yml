@@ -1,0 +1,33 @@
+# SwiftLint checks code quality; formatting is left to swift-format (see .swift-format).
+# Run both with Scripts/lint.sh.
+included:
+  - Package.swift
+  - Sources
+  - Scripts
+  - Tests
+excluded:
+  - .build
+  - build
+  - dist
+
+disabled_rules:
+  - trailing_comma   # swift-format adds trailing commas to multi-line collections
+  - opening_brace    # swift-format decides where braces go
+
+# Short names (i, s, v, R) are used deliberately for locals, closure parameters and local types.
+identifier_name:
+  min_length: 1
+  max_length: 60
+type_name:
+  min_length: 1
+
+# Codable helper types are nested inside the functions that decode them.
+nesting:
+  type_level: 3
+
+line_length:
+  warning: 120
+  error: 300
+  ignores_comments: true
+  ignores_urls: true
+  ignores_interpolated_strings: true

@@ -20,24 +20,34 @@ enum Shell {
                 env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
                 env["HOMEBREW_NO_ENV_HINTS"] = "1"
                 p.environment = env
-                let out = Pipe(), err = Pipe()
+                let out = Pipe()
+                let err = Pipe()
                 p.standardOutput = out
                 p.standardError = err
-                do { try p.run() } catch { cont.resume(throwing: error); return }
+                do { try p.run() } catch {
+                    cont.resume(throwing: error)
+                    return
+                }
 
                 let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
                 // Read before waiting so a large output cannot fill the pipe and block the child.
-                var outData = Data(), errData = Data()
+                var outData = Data()
+                var errData = Data()
                 let group = DispatchGroup()
                 group.enter()
-                DispatchQueue.global().async { outData = out.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+                DispatchQueue.global().async {
+                    outData = out.fileHandleForReading.readDataToEndOfFile()
+                    group.leave()
+                }
                 errData = err.fileHandleForReading.readDataToEndOfFile()
                 group.wait()
                 p.waitUntilExit()
                 timer.cancel()
-                cont.resume(returning: Output(status: p.terminationStatus, stdout: outData,
-                                              stderr: String(decoding: errData, as: UTF8.self)))
+                cont.resume(
+                    returning: Output(
+                        status: p.terminationStatus, stdout: outData,
+                        stderr: String(decoding: errData, as: UTF8.self)))
             }
         }
     }

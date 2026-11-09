@@ -11,7 +11,9 @@ struct FindingList: View {
                 ContentUnavailableView {
                     Label("No scan yet", systemImage: "shield.lefthalf.filled")
                 } description: {
-                    Text("D-Patch checks the software on this Mac against known CVEs, at the severity levels chosen in Settings, and lists the ones with an available fix.")
+                    Text(
+                        "D-Patch checks the software on this Mac against known CVEs, at the severity levels chosen in Settings, and lists the ones with an available fix."
+                    )
                 } actions: {
                     Button("Scan Now") { model.scan() }.disabled(model.isScanning)
                 }
@@ -48,8 +50,9 @@ struct FindingList: View {
 
     @ViewBuilder private var emptyState: some View {
         if !model.search.isEmpty {
-            ContentUnavailableView("No matches", systemImage: "magnifyingglass",
-                                   description: Text("No CVEs match “\(model.search)”."))
+            ContentUnavailableView(
+                "No matches", systemImage: "magnifyingglass",
+                description: Text("No CVEs match “\(model.search)”."))
         } else if model.filtersActive {
             ContentUnavailableView {
                 Label("No CVEs match the filters", systemImage: "line.3.horizontal.decrease.circle")
@@ -57,8 +60,9 @@ struct FindingList: View {
                 Button("Clear Filters") { model.clearFilters() }
             }
         } else {
-            ContentUnavailableView("Nothing to patch", systemImage: "checkmark.shield",
-                                   description: Text("No fixable CVEs at the chosen severity levels affect this Mac."))
+            ContentUnavailableView(
+                "Nothing to patch", systemImage: "checkmark.shield",
+                description: Text("No fixable CVEs at the chosen severity levels affect this Mac."))
         }
     }
 
@@ -85,7 +89,10 @@ private struct ListHeader: View {
             if !model.checked.isEmpty {
                 let hidden = model.hiddenCheckedCount
                 Text("\(model.checked.count) ticked" + (hidden > 0 ? " (\(hidden) not shown)" : ""))
-                    .help(hidden > 0 ? "Some ticked CVEs are hidden by the filters or the selected date; Patch Selected still includes them." : "")
+                    .help(
+                        hidden > 0
+                            ? "Some ticked CVEs are hidden by the filters or the selected date; Patch Selected still includes them."
+                            : "")
                 Button("Clear") { model.checked.removeAll() }.buttonStyle(.link)
             }
         }
@@ -93,7 +100,6 @@ private struct ListHeader: View {
         .padding(.vertical, 6)
     }
 }
-
 
 struct FindingRow: View {
     @EnvironmentObject var model: AppModel
@@ -104,9 +110,11 @@ struct FindingRow: View {
         let expanded = model.expanded.contains(finding.id)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Toggle("", isOn: Binding(get: { model.checked.contains(finding.id) }, set: { _ in model.toggle(finding) }))
-                    .toggleStyle(.checkbox)
-                    .labelsHidden()
+                Toggle(
+                    "", isOn: Binding(get: { model.checked.contains(finding.id) }, set: { _ in model.toggle(finding) })
+                )
+                .toggleStyle(.checkbox)
+                .labelsHidden()
                 Button {
                     withAnimation(.easeInOut(duration: 0.22)) { model.toggleExpanded(finding) }
                 } label: {
@@ -173,7 +181,9 @@ struct FindingDetail: View {
                     row("Severity", "\(cve.severity.rawValue.capitalized) — CVSS \(String(format: "%.1f", cve.score))")
                     if !cve.vector.isEmpty { row("Vector", cve.vector) }
                     row("Published", cve.published.formatted(date: .long, time: .shortened))
-                    row("Affects", "\(finding.item.name) \(finding.item.version)" + (finding.item.path.map { " — \($0)" } ?? ""))
+                    row(
+                        "Affects",
+                        "\(finding.item.name) \(finding.item.version)" + (finding.item.path.map { " — \($0)" } ?? ""))
                     row("Fixed in", finding.fixedIn)
                 }
                 .font(.callout)
@@ -226,15 +236,20 @@ struct FindingDetail: View {
     private var note: String {
         switch finding.fix.method {
         case .brewFormula:
-            return "Upgrades the Homebrew formula to \(finding.fix.toVersion). Run `brew update` first so Homebrew knows about the latest version."
+            return
+                "Upgrades the Homebrew formula to \(finding.fix.toVersion). Run `brew update` first so Homebrew knows about the latest version."
         case .brewCask:
-            return "Upgrades the Homebrew-managed app to \(FixResolver.plain(finding.fix.toVersion)). Quit the app first."
+            return
+                "Upgrades the Homebrew-managed app to \(FixResolver.plain(finding.fix.toVersion)). Quit the app first."
         case .brewCaskReplace:
-            return "This app was installed outside Homebrew. The command installs the Homebrew cask (\(FixResolver.plain(finding.fix.toVersion))) over it, after which Homebrew manages its updates. Quit the app first."
+            return
+                "This app was installed outside Homebrew. The command installs the Homebrew cask (\(FixResolver.plain(finding.fix.toVersion))) over it, after which Homebrew manages its updates. Quit the app first."
         case .appStore:
-            return "Updates the app from the Mac App Store using the `mas` tool (`brew install mas`); you must be signed in to the App Store. You can also update it in App Store › Updates."
+            return
+                "Updates the app from the Mac App Store using the `mas` tool (`brew install mas`); you must be signed in to the App Store. You can also update it in App Store › Updates."
         case .softwareUpdate:
-            return "Installs the Apple update. It needs an administrator password and may restart the Mac. You can also install it from System Settings › General › Software Update."
+            return
+                "Installs the Apple update. It needs an administrator password and may restart the Mac. You can also install it from System Settings › General › Software Update."
         }
     }
 

@@ -1,0 +1,56 @@
+# Lint, format check, tests and a build on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Format and lint
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install SwiftLint
+        run: brew install swiftlint
+      - name: Versions
+        run: |
+          swift --version
+          swift format --version
+          swiftlint version
+      - name: Check formatting and lint
+        run: Scripts/lint.sh
+
+  test:
+    name: Test and build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Test
+        run: ./test.sh
+      - name: Build
+        run: ./build.sh
+      - name: Check the app
+        run: |
+          codesign -v build/D-Patch.app
+          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q arm64
+          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q x86_64
+      - name: Zip the app
+        run: ditto -c -k --keepParent build/D-Patch.app D-Patch.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: D-Patch-${{ github.sha }}
+          path: D-Patch.zip
+          retention-days: 7
