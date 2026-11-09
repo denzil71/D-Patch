@@ -14,14 +14,15 @@ struct Matcher {
     }
 
     private let cves: [CVERecord]
-    private var byProduct: [String: [Entry]] = [:]        // normalized product
+    private var byProduct: [String: [Entry]] = [:]  // normalized product
     private var byVendorProduct: [String: [Entry]] = [:]  // normalized vendor + product
 
     init(cves: [CVERecord]) {
         self.cves = cves
         for (ci, c) in cves.enumerated() {
             for (ri, r) in c.ranges.enumerated() {
-                let v = normalizeName(r.vendor), p = normalizeName(r.product)
+                let v = normalizeName(r.vendor)
+                let p = normalizeName(r.product)
                 guard !p.isEmpty else { continue }
                 let e = Entry(cve: ci, range: ri, vendor: v)
                 byProduct[p, default: []].append(e)
@@ -33,7 +34,7 @@ struct Matcher {
     /// CVEs whose affected ranges name this item and include its installed version.
     func hits(for item: InventoryItem) -> [Hit] {
         guard let installed = Version(item.version) else { return [] }
-        var found: [Int: Set<Int>] = [:]   // cve index -> range indexes
+        var found: [Int: Set<Int>] = [:]  // cve index -> range indexes
 
         func vendorFits(_ v: String) -> Bool {
             guard let h = item.vendorHint, !v.isEmpty else { return false }

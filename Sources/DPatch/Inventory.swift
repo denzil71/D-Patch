@@ -18,11 +18,13 @@ enum Inventory {
         "ffmpeg": ["ffmpegffmpeg"],
     ]
 
-    static let genericBundleParts: Set<String> = ["app", "desktop", "client", "mac", "macos", "osx", "application", "main", "helper"]
+    static let genericBundleParts: Set<String> = [
+        "app", "desktop", "client", "mac", "macos", "osx", "application", "main", "helper",
+    ]
 
     static func collect(warnings: inout [String]) async -> [InventoryItem] {
         var items: [InventoryItem] = [macOSItem()]
-        var caskApps: [String: (token: String, latest: String)] = [:]   // "Firefox.app" -> cask
+        var caskApps: [String: (token: String, latest: String)] = [:]  // "Firefox.app" -> cask
 
         if let brew = Shell.brewPath {
             do {
@@ -32,17 +34,21 @@ enum Inventory {
                     guard let installed = f.installed.last?.version else { continue }
                     let base = f.name.split(separator: "@").first.map(String.init) ?? f.name
                     let n = normalizeName(base)
-                    items.append(InventoryItem(kind: .formula, name: f.name, version: installed,
-                                               aliases: [n] + (formulaAliases[n] ?? []),
-                                               latestVersion: f.versions.stable))
+                    items.append(
+                        InventoryItem(
+                            kind: .formula, name: f.name, version: installed,
+                            aliases: [n] + (formulaAliases[n] ?? []),
+                            latestVersion: f.versions.stable))
                 }
                 for c in info.casks {
                     guard let installed = c.installed else { continue }
                     let apps = c.artifacts.flatMap { $0.app ?? [] }
                     if apps.isEmpty {
-                        items.append(InventoryItem(kind: .cask, name: c.token, version: installed,
-                                                   aliases: [normalizeName(c.token)],
-                                                   caskToken: c.token, latestVersion: c.version))
+                        items.append(
+                            InventoryItem(
+                                kind: .cask, name: c.token, version: installed,
+                                aliases: [normalizeName(c.token)],
+                                caskToken: c.token, latestVersion: c.version))
                     }
                     for a in apps { caskApps[a] = (c.token, c.version) }
                 }
@@ -70,10 +76,13 @@ enum Inventory {
 
     static func macOSItem() -> InventoryItem {
         let v = ProcessInfo.processInfo.operatingSystemVersion
-        let version = v.patchVersion > 0 ? "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
-                                         : "\(v.majorVersion).\(v.minorVersion)"
-        return InventoryItem(kind: .macos, name: "macOS", version: version,
-                             aliases: ["macos", "macosx"], vendorHint: "apple", bundleID: "com.apple.macos")
+        let version =
+            v.patchVersion > 0
+            ? "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+            : "\(v.majorVersion).\(v.minorVersion)"
+        return InventoryItem(
+            kind: .macos, name: "macOS", version: version,
+            aliases: ["macos", "macosx"], vendorHint: "apple", bundleID: "com.apple.macos")
     }
 
     static func appBundles(in dir: String) -> [String] {
@@ -83,8 +92,8 @@ enum Inventory {
 
     static func appItem(at path: String) -> InventoryItem? {
         guard let plist = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist") as? [String: Any],
-              let version = (plist["CFBundleShortVersionString"] ?? plist["CFBundleVersion"]) as? String,
-              Version(version) != nil
+            let version = (plist["CFBundleShortVersionString"] ?? plist["CFBundleVersion"]) as? String,
+            Version(version) != nil
         else { return nil }
         let file = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         let display = (plist["CFBundleDisplayName"] as? String) ?? (plist["CFBundleName"] as? String) ?? file
@@ -100,9 +109,10 @@ enum Inventory {
             }
         }
         let isAppStore = FileManager.default.fileExists(atPath: "\(path)/Contents/_MASReceipt/receipt")
-        return InventoryItem(kind: .app, name: display, version: version,
-                             aliases: Array(Set(aliases.filter { !$0.isEmpty })).sorted(),
-                             vendorHint: vendor, bundleID: bundleID, path: path, isAppStore: isAppStore)
+        return InventoryItem(
+            kind: .app, name: display, version: version,
+            aliases: Array(Set(aliases.filter { !$0.isEmpty })).sorted(),
+            vendorHint: vendor, bundleID: bundleID, path: path, isAppStore: isAppStore)
     }
 }
 

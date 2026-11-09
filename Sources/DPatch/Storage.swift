@@ -55,7 +55,9 @@ enum Prefs {
     /// CVE severity levels to scan for, stored as "CRITICAL,HIGH".
     static var severities: [Severity] {
         get {
-            let list = (d.string(forKey: "severities") ?? "").split(separator: ",").compactMap { Severity(rawValue: String($0)) }
+            let list = (d.string(forKey: "severities") ?? "").split(separator: ",").compactMap {
+                Severity(rawValue: String($0))
+            }
             return list.isEmpty ? Severity.defaults : list.sorted(by: >)
         }
         set { d.set(newValue.sorted(by: >).map(\.rawValue).joined(separator: ","), forKey: "severities") }

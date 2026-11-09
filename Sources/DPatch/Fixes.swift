@@ -3,8 +3,15 @@ import Foundation
 /// Finds an installable update that moves an item out of every affected range.
 /// Sources are loaded lazily, once per scan, and only when an item needs them.
 final class FixResolver {
-    private struct SoftwareUpdate { var label: String; var title: String; var version: String }
-    private struct CaskEntry { var token: String; var version: String }
+    private struct SoftwareUpdate {
+        var label: String
+        var title: String
+        var version: String
+    }
+    private struct CaskEntry {
+        var token: String
+        var version: String
+    }
 
     private var softwareUpdates: [SoftwareUpdate]?
     private var caskByApp: [String: CaskEntry]?
@@ -16,49 +23,61 @@ final class FixResolver {
         guard let installed = Version(item.version) else { return nil }
         func fixes(_ candidate: String?) -> String? {
             guard let c = candidate, let v = Version(c), v > installed,
-                  !ranges.contains(where: { $0.contains(v) }) else { return nil }
+                !ranges.contains(where: { $0.contains(v) })
+            else { return nil }
             return c
         }
 
         switch item.kind {
         case .formula:
             guard let to = fixes(item.latestVersion) else { return nil }
-            return Fix(method: .brewFormula, target: item.name, toVersion: to,
-                       summary: "Homebrew: upgrade formula \(item.name) \(item.version) → \(to)")
+            return Fix(
+                method: .brewFormula, target: item.name, toVersion: to,
+                summary: "Homebrew: upgrade formula \(item.name) \(item.version) → \(to)")
         case .cask:
             guard let token = item.caskToken, let to = fixes(item.latestVersion) else { return nil }
-            return Fix(method: .brewCask, target: token, toVersion: to,
-                       summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
+            return Fix(
+                method: .brewCask, target: token, toVersion: to,
+                summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
         case .macos:
             return await softwareUpdateFix(item, references: references, matching: { $0.hasPrefix("macOS") }, fixes)
         case .app:
             if let token = item.caskToken {
                 guard let to = fixes(item.latestVersion) else { return nil }
-                return Fix(method: .brewCask, target: token, toVersion: to,
-                           summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
+                return Fix(
+                    method: .brewCask, target: token, toVersion: to,
+                    summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
             }
             if item.isAppStore {
                 guard let id = item.bundleID, let entry = await appStoreEntry(bundleID: id),
-                      let to = fixes(entry.version) else { return nil }
-                return Fix(method: .appStore, target: String(entry.id), toVersion: to,
-                           summary: "Mac App Store: update \(item.name) \(item.version) → \(to)")
+                    let to = fixes(entry.version)
+                else { return nil }
+                return Fix(
+                    method: .appStore, target: String(entry.id), toVersion: to,
+                    summary: "Mac App Store: update \(item.name) \(item.version) → \(to)")
             }
             if item.bundleID?.hasPrefix("com.apple.") == true {
-                return await softwareUpdateFix(item, references: references,
-                                              matching: { $0.localizedCaseInsensitiveContains(item.name) }, fixes)
+                return await softwareUpdateFix(
+                    item, references: references,
+                    matching: { $0.localizedCaseInsensitiveContains(item.name) }, fixes)
             }
             guard let file = item.path.map({ ($0 as NSString).lastPathComponent }),
-                  let cask = await caskCatalog()[file], let to = fixes(cask.version) else { return nil }
-            return Fix(method: .brewCaskReplace, target: cask.token, toVersion: to,
-                       summary: "Homebrew: install cask \(cask.token) over the existing app, \(item.version) → \(Self.plain(to))")
+                let cask = await caskCatalog()[file], let to = fixes(cask.version)
+            else { return nil }
+            return Fix(
+                method: .brewCaskReplace, target: cask.token, toVersion: to,
+                summary:
+                    "Homebrew: install cask \(cask.token) over the existing app, \(item.version) → \(Self.plain(to))")
         }
     }
 
     /// Cask versions carry a build after a comma ("4.95.0,242831"); show only the version.
     static func plain(_ v: String) -> String { v.split(separator: ",").first.map(String.init) ?? v }
 
-    private func softwareUpdateFix(_ item: InventoryItem, references: [String], matching: (String) -> Bool,
-                                   _ fixes: (String?) -> String?) async -> Fix? {
+    private func softwareUpdateFix(
+        _ item: InventoryItem, references: [String], matching: (String) -> Bool,
+        _ fixes: (String?) -> String?
+    ) async -> Fix? {
         // Smallest update that fixes it, so a point release wins over a major upgrade.
         let candidates = await loadSoftwareUpdates()
             .filter { matching($0.title) && fixes($0.version) != nil }
@@ -67,14 +86,17 @@ final class FixResolver {
         let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
         let note = item.kind == .macos && major(u.version) != major(item.version) ? " — major macOS upgrade" : ""
         let notes = await appleNotes(references, product: item.kind == .macos ? "macOS" : item.name, version: u.version)
-        return Fix(method: .softwareUpdate, target: u.label, toVersion: u.version,
-                   summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(u.version))\(note)",
-                   notesURL: notes?.url, notesTitle: notes?.title)
+        return Fix(
+            method: .softwareUpdate, target: u.label, toVersion: u.version,
+            summary: "Apple Software Update: install “\(u.title)” (\(item.version) → \(u.version))\(note)",
+            notesURL: notes?.url, notesTitle: notes?.title)
     }
 
     /// Of a CVE's support.apple.com references, the security notes for this product and update:
     /// "About the security content of macOS Tahoe 26.7" matches macOS 26.7.1, not 27.0.1 or iOS 26.7.
-    private func appleNotes(_ references: [String], product: String, version: String) async -> (url: String, title: String)? {
+    private func appleNotes(_ references: [String], product: String, version: String) async -> (
+        url: String, title: String
+    )? {
         guard let target = Version(version) else { return nil }
         var best: (url: String, title: String, depth: Int)?
         for url in references where url.contains("support.apple.com") {
@@ -82,7 +104,8 @@ final class FixResolver {
             let title = raw.replacingOccurrences(of: " - Apple Support", with: "")
                 .replacingOccurrences(of: "About the security content of ", with: "")
             guard title.localizedCaseInsensitiveContains(product),
-                  let v = title.split(separator: " ").last.map(String.init), let nv = Version(v) else { continue }
+                let v = title.split(separator: " ").last.map(String.init), let nv = Version(v)
+            else { continue }
             // The note's version must be a prefix of the update's: 26.7 for 26.7.1, 27 for 27.0.1.
             let depth = nv.parts.count
             guard depth <= target.parts.count, Array(target.parts.prefix(depth)) == nv.parts else { continue }
@@ -101,7 +124,8 @@ final class FixResolver {
         // support.apple.com serves an empty page to clients that don't look like a browser.
         req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) D-Patch", forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            (resp as? HTTPURLResponse)?.statusCode == 200
+        else { return nil }
         let html = String(decoding: data, as: UTF8.self)
         guard let r = html.range(of: #"<title[^>]*>[^<]*"#, options: .regularExpression) else { return nil }
         let title = String(html[r]).replacingOccurrences(of: #"<title[^>]*>"#, with: "", options: .regularExpression)
@@ -127,7 +151,9 @@ final class FixResolver {
                 } else if t.hasPrefix("Title:"), let l = label {
                     var fields: [String: String] = [:]
                     for part in t.split(separator: ",") {
-                        let kv = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                        let kv = part.split(separator: ":", maxSplits: 1).map {
+                            $0.trimmingCharacters(in: .whitespaces)
+                        }
                         if kv.count == 2 { fields[kv[0]] = kv[1] }
                     }
                     if let title = fields["Title"], let v = fields["Version"] {
@@ -145,13 +171,22 @@ final class FixResolver {
 
     private func appStoreEntry(bundleID: String) async -> (id: Int, version: String)? {
         if let cached = appStore[bundleID] { return cached }
-        struct Lookup: Decodable { struct R: Decodable { var trackId: Int; var version: String }; var results: [R] }
+        struct Lookup: Decodable {
+            struct R: Decodable {
+                var trackId: Int
+                var version: String
+            }
+            var results: [R]
+        }
         var result: (Int, String)?
         var c = URLComponents(string: "https://itunes.apple.com/lookup")!
-        c.queryItems = [URLQueryItem(name: "bundleId", value: bundleID), URLQueryItem(name: "entity", value: "macSoftware"),
-                        URLQueryItem(name: "country", value: Locale.current.region?.identifier ?? "US")]
+        c.queryItems = [
+            URLQueryItem(name: "bundleId", value: bundleID), URLQueryItem(name: "entity", value: "macSoftware"),
+            URLQueryItem(name: "country", value: Locale.current.region?.identifier ?? "US"),
+        ]
         if let (data, _) = try? await URLSession.shared.data(from: c.url!),
-           let r = try? JSONDecoder().decode(Lookup.self, from: data).results.first {
+            let r = try? JSONDecoder().decode(Lookup.self, from: data).results.first
+        {
             result = (r.trackId, r.version)
         }
         appStore[bundleID] = result
@@ -176,11 +211,13 @@ final class FixResolver {
             var artifacts: [Artifact]
         }
         let url = Storage.base.appendingPathComponent("cask.json")
-        let age = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        let age =
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
             .map { Date().timeIntervalSince($0) } ?? .infinity
         if age > 86_400 {
             do {
-                let (data, resp) = try await URLSession.shared.data(from: URL(string: "https://formulae.brew.sh/api/cask.json")!)
+                let (data, resp) = try await URLSession.shared.data(
+                    from: URL(string: "https://formulae.brew.sh/api/cask.json")!)
                 if (resp as? HTTPURLResponse)?.statusCode == 200 { try data.write(to: url, options: .atomic) }
             } catch {
                 warnings.append("Could not download the Homebrew cask index: \(error.localizedDescription)")

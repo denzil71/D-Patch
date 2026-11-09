@@ -1,62 +1,70 @@
 #if DEBUG
-import AppKit
-import SwiftUI
+    import AppKit
+    import SwiftUI
 
-/// Debug builds only: `DPatch --snapshot out.png [--expand N]` renders the main window offscreen
-/// from the saved results, with the Nth finding (default 0) expanded, to check layout without a screen.
-/// `--patch-sheet` renders the Patch sheet for every finding instead (`--show-script` opens its Script section);
-/// `--settings` renders the Settings pane. `--show-levels`, `--fix` and `--hide-major` set the list filters.
-enum Snapshot {
-    @MainActor
-    static func render(to path: String) {
-        _ = NSApplication.shared
-        let model = AppModel()
-        let args = CommandLine.arguments
-        let index = args.firstIndex(of: "--expand").flatMap { Int(args[safe: $0 + 1] ?? "") } ?? 0
-        // Filter states: --show-levels HIGH,LOW  --fix apple|homebrew|appStore  --hide-major
-        if let i = args.firstIndex(of: "--show-levels"), let v = args[safe: i + 1] {
-            model.severityFilter = Set(v.split(separator: ",").compactMap { Severity(rawValue: String($0)) })
-        }
-        if let i = args.firstIndex(of: "--fix"), let v = args[safe: i + 1] {
-            model.fixFilter = ["homebrew": .homebrew, "appStore": .appStore, "apple": .apple][v]
-        }
-        model.hideMajorUpgrades = args.contains("--hide-major")
-        if let f = model.visible[safe: index] { model.expanded.insert(f.id) }
-
-        if args.contains("--settings") {
-            let host = NSHostingView(rootView: SettingsView().background(Color(nsColor: .windowBackgroundColor)))
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-            window.contentView = host
-            RunLoop.main.run(until: Date().addingTimeInterval(1.0))
-            host.setFrameSize(host.fittingSize)
-            host.layoutSubtreeIfNeeded()
-            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-                host.cacheDisplay(in: host.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                print("Wrote \(path)")
+    /// Debug builds only: `DPatch --snapshot out.png [--expand N]` renders the main window offscreen
+    /// from the saved results, with the Nth finding (default 0) expanded, to check layout without a screen.
+    /// `--patch-sheet` renders the Patch sheet for every finding instead (`--show-script` opens its Script section);
+    /// `--settings` renders the Settings pane. `--show-levels`, `--fix` and `--hide-major` set the list filters.
+    enum Snapshot {
+        @MainActor
+        static func render(to path: String) {
+            _ = NSApplication.shared
+            let model = AppModel()
+            let args = CommandLine.arguments
+            let index = args.firstIndex(of: "--expand").flatMap { Int(args[safe: $0 + 1] ?? "") } ?? 0
+            // Filter states: --show-levels HIGH,LOW  --fix apple|homebrew|appStore  --hide-major
+            if let i = args.firstIndex(of: "--show-levels"), let v = args[safe: i + 1] {
+                model.severityFilter = Set(v.split(separator: ",").compactMap { Severity(rawValue: String($0)) })
             }
-            return
+            if let i = args.firstIndex(of: "--fix"), let v = args[safe: i + 1] {
+                model.fixFilter = ["homebrew": .homebrew, "appStore": .appStore, "apple": .apple][v]
+            }
+            model.hideMajorUpgrades = args.contains("--hide-major")
+            if let f = model.visible[safe: index] { model.expanded.insert(f.id) }
+
+            if args.contains("--settings") {
+                let host = NSHostingView(rootView: SettingsView().background(Color(nsColor: .windowBackgroundColor)))
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: 480, height: 700), styleMask: [.titled], backing: .buffered,
+                    defer: false)
+                window.contentView = host
+                RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+                host.setFrameSize(host.fittingSize)
+                host.layoutSubtreeIfNeeded()
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    print("Wrote \(path)")
+                }
+                return
+            }
+            let size =
+                args.contains("--patch-sheet") ? NSSize(width: 680, height: 900) : NSSize(width: 1100, height: 760)
+            let root: AnyView =
+                args.contains("--patch-sheet")
+                ? AnyView(
+                    PatchSheet(
+                        request: PatchRequest(findings: model.findings), showScript: args.contains("--show-script")
+                    ).frame(width: 680, height: 900)
+                        .background(Color(nsColor: .windowBackgroundColor)))
+                : AnyView(ContentView().environmentObject(model).frame(width: size.width, height: size.height))
+            let host = NSHostingView(rootView: root)
+            let window = NSWindow(
+                contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+            host.layoutSubtreeIfNeeded()
+
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            print("Wrote \(path)")
         }
-        let size = args.contains("--patch-sheet") ? NSSize(width: 680, height: 900) : NSSize(width: 1100, height: 760)
-        let root: AnyView = args.contains("--patch-sheet")
-            ? AnyView(PatchSheet(request: PatchRequest(findings: model.findings), showScript: args.contains("--show-script")).frame(width: 680, height: 900)
-                .background(Color(nsColor: .windowBackgroundColor)))
-            : AnyView(ContentView().environmentObject(model).frame(width: size.width, height: size.height))
-        let host = NSHostingView(rootView: root)
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView = host
-        host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
-        host.layoutSubtreeIfNeeded()
-
-        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
-        host.cacheDisplay(in: host.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-        print("Wrote \(path)")
     }
-}
 
-private extension Array {
-    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
-}
+    extension Array {
+        fileprivate subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+    }
 #endif

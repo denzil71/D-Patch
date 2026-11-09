@@ -8,10 +8,10 @@ enum Main {
             exit(Scanner.runHeadless())
         }
         #if DEBUG
-        if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
-            MainActor.assumeIsolated { Snapshot.render(to: CommandLine.arguments[i + 1]) }
-            exit(0)
-        }
+            if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
+                MainActor.assumeIsolated { Snapshot.render(to: CommandLine.arguments[i + 1]) }
+                exit(0)
+            }
         #endif
         if CommandLine.arguments.contains("--script") {
             // Script for every finding of the last scan, e.g. `DPatch --script > patch.sh`.
@@ -20,8 +20,10 @@ enum Main {
                 exit(1)
             }
             let unattended = CommandLine.arguments.contains("--no-confirm")
-            print(ScriptGenerator.script(for: r.findings, confirm: !unattended,
-                                         rescan: unattended ? Bundle.main.executablePath : nil), terminator: "")
+            print(
+                ScriptGenerator.script(
+                    for: r.findings, confirm: !unattended,
+                    rescan: unattended ? Bundle.main.executablePath : nil), terminator: "")
             exit(0)
         }
         DPatchApp.main()

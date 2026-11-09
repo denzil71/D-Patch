@@ -25,9 +25,11 @@ struct ContentView: View {
                 Button {
                     patch = PatchRequest(findings: model.checkedFindings)
                 } label: {
-                    Label(model.checked.isEmpty ? "Patch Selected" : "Patch Selected (\(model.checked.count))",
-                          systemImage: "bandage")
-                        .labelStyle(.titleAndIcon)
+                    Label(
+                        model.checked.isEmpty ? "Patch Selected" : "Patch Selected (\(model.checked.count))",
+                        systemImage: "bandage"
+                    )
+                    .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.checked.isEmpty)
@@ -36,8 +38,12 @@ struct ContentView: View {
         }
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(item: $patch) { PatchSheet(request: $0) { model.checked.removeAll() } }
-        .alert("Scan failed", isPresented: Binding(get: { model.errorMessage != nil },
-                                                   set: { if !$0 { model.errorMessage = nil } })) {
+        .alert(
+            "Scan failed",
+            isPresented: Binding(
+                get: { model.errorMessage != nil },
+                set: { if !$0 { model.errorMessage = nil } })
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
@@ -54,9 +60,10 @@ struct DateSidebar: View {
                 HStack {
                     Label("All dates", systemImage: "calendar")
                     Spacer()
-                    CountBadges(counts: model.days.reduce(into: [:]) { total, d in
-                        total.merge(d.counts, uniquingKeysWith: +)
-                    })
+                    CountBadges(
+                        counts: model.days.reduce(into: [:]) { total, d in
+                            total.merge(d.counts, uniquingKeysWith: +)
+                        })
                 }
                 .tag(DayFilter.all)
             }
@@ -112,8 +119,10 @@ struct StatusBar: View {
                 ProgressView().controlSize(.small)
                 Text(model.status).lineLimit(1).truncationMode(.middle)
             } else if let r = model.result {
-                Text("Last scan \(r.scannedAt.formatted(date: .abbreviated, time: .shortened)) · \(r.itemsChecked) installed items · \(r.cvesChecked) \((r.severities ?? Severity.defaults).map { $0.label.lowercased() }.joined(separator: "/")) CVEs from the last \(r.lookbackDays) days")
-                    .lineLimit(1)
+                Text(
+                    "Last scan \(r.scannedAt.formatted(date: .abbreviated, time: .shortened)) · \(r.itemsChecked) installed items · \(r.cvesChecked) \((r.severities ?? Severity.defaults).map { $0.label.lowercased() }.joined(separator: "/")) CVEs from the last \(r.lookbackDays) days"
+                )
+                .lineLimit(1)
                 if !r.warnings.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.yellow)

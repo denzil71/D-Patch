@@ -7,7 +7,7 @@ struct NVDClient {
     var progress: (String) -> Void
 
     static let endpoint = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-    static let maxRangeDays = 120   // NVD limit for one date range
+    static let maxRangeDays = 120  // NVD limit for one date range
     private static var lastRequest = Date.distantPast
 
     struct Cache: Codable {
@@ -24,28 +24,36 @@ struct NVDClient {
         let start = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: now)!
         var cache: Cache
         if let old = Storage.load(Cache.self, from: Storage.cacheURL), !old.records.isEmpty,
-           now.timeIntervalSince(old.fetchedThrough) < Double(Self.maxRangeDays) * 86_400 {
+            now.timeIntervalSince(old.fetchedThrough) < Double(Self.maxRangeDays) * 86_400
+        {
             cache = old
             let had = Set(old.severities ?? Severity.defaults)
             // Levels no longer wanted are dropped; newly wanted ones are fetched for the whole window.
             cache.records = cache.records.filter { severities.contains($0.value.severity) }
             let added = severities.filter { !had.contains($0) }
             if !added.isEmpty {
-                for r in try await fetch(field: "pub", severities: added, from: start, to: now) { cache.records[r.id] = r }
+                for r in try await fetch(field: "pub", severities: added, from: start, to: now) {
+                    cache.records[r.id] = r
+                }
             }
             let kept = severities.filter { had.contains($0) }
             // Extend the window backwards by publish date when the look-back grew.
             if start < cache.windowStart, !kept.isEmpty {
-                for r in try await fetch(field: "pub", severities: kept, from: start, to: cache.windowStart) { cache.records[r.id] = r }
+                for r in try await fetch(field: "pub", severities: kept, from: start, to: cache.windowStart) {
+                    cache.records[r.id] = r
+                }
             }
             // Then pick up everything published or changed since the last scan.
-            for r in try await fetch(field: "lastMod", severities: kept, from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
+            for r in try await fetch(
+                field: "lastMod", severities: kept, from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
             where r.published >= start {
                 cache.records[r.id] = r
             }
         } else {
             cache = Cache(windowStart: start, fetchedThrough: now, records: [:])
-            for r in try await fetch(field: "pub", severities: severities, from: start, to: now) { cache.records[r.id] = r }
+            for r in try await fetch(field: "pub", severities: severities, from: start, to: now) {
+                cache.records[r.id] = r
+            }
         }
         cache.severities = severities
         cache.windowStart = start
@@ -64,10 +72,13 @@ struct NVDClient {
                 let chunkEnd = min(to, chunkStart.addingTimeInterval(Double(Self.maxRangeDays) * 86_400))
                 var index = 0
                 while true {
-                    let page = try await request(field: field, severity: severity, from: chunkStart, to: chunkEnd, startIndex: index)
+                    let page = try await request(
+                        field: field, severity: severity, from: chunkStart, to: chunkEnd, startIndex: index)
                     out += page.vulnerabilities.compactMap { CVERecord(nvd: $0.cve) }
                     index += page.resultsPerPage
-                    progress("Downloading \(severity.lowercased()) CVEs \(Self.dayFormatter.string(from: chunkStart))–\(Self.dayFormatter.string(from: chunkEnd)): \(min(index, page.totalResults)) of \(page.totalResults)")
+                    progress(
+                        "Downloading \(severity.lowercased()) CVEs \(Self.dayFormatter.string(from: chunkStart))–\(Self.dayFormatter.string(from: chunkEnd)): \(min(index, page.totalResults)) of \(page.totalResults)"
+                    )
                     if page.resultsPerPage == 0 || index >= page.totalResults { break }
                 }
                 chunkStart = chunkEnd
@@ -76,7 +87,9 @@ struct NVDClient {
         return out
     }
 
-    private func request(field: String, severity: String, from: Date, to: Date, startIndex: Int) async throws -> NVDResponse {
+    private func request(field: String, severity: String, from: Date, to: Date, startIndex: Int) async throws
+        -> NVDResponse
+    {
         var c = URLComponents(string: Self.endpoint)!
         c.queryItems = [
             URLQueryItem(name: "\(field)StartDate", value: Self.isoFormatter.string(from: from)),
@@ -94,7 +107,8 @@ struct NVDClient {
         let pause: TimeInterval = (apiKey?.isEmpty ?? true) ? 6.5 : 0.7
         var attempt = 0
         while true {
-            let wait = attempt == 0 ? pause - Date().timeIntervalSince(Self.lastRequest) : pause * Double(attempt + 1) * 2
+            let wait =
+                attempt == 0 ? pause - Date().timeIntervalSince(Self.lastRequest) : pause * Double(attempt + 1) * 2
             if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
             Self.lastRequest = Date()
             do {
@@ -104,8 +118,12 @@ struct NVDClient {
                     // NVD occasionally answers 200 with an empty or cut-off body; retry those.
                     do { return try JSONDecoder().decode(NVDResponse.self, from: data) } catch let e as DecodingError {
                         if attempt >= 3 {
-                            throw NSError(domain: "NVD", code: 0, userInfo: [NSLocalizedDescriptionKey:
-                                "Unexpected NVD response (\(data.count) bytes): \(Self.describe(e))"])
+                            throw NSError(
+                                domain: "NVD", code: 0,
+                                userInfo: [
+                                    NSLocalizedDescriptionKey:
+                                        "Unexpected NVD response (\(data.count) bytes): \(Self.describe(e))"
+                                ])
                         }
                         attempt += 1
                         progress("NVD sent an incomplete response, retrying (\(attempt)/3)…")
@@ -113,8 +131,12 @@ struct NVDClient {
                     }
                 }
                 if attempt >= 3 || ![403, 429, 500, 502, 503, 504].contains(status) {
-                    throw NSError(domain: "NVD", code: status, userInfo: [NSLocalizedDescriptionKey:
-                        "NVD returned HTTP \(status)" + (status == 404 ? " (check the API key)" : "")])
+                    throw NSError(
+                        domain: "NVD", code: status,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "NVD returned HTTP \(status)" + (status == 404 ? " (check the API key)" : "")
+                        ])
                 }
             } catch let e as URLError where attempt < 3 {
                 progress("NVD request failed (\(e.code.rawValue)), retrying…")
@@ -125,10 +147,12 @@ struct NVDClient {
     }
 
     static func describe(_ e: DecodingError) -> String {
-        let path: [CodingKey], detail: String
+        let path: [CodingKey]
+        let detail: String
         switch e {
         case .keyNotFound(let k, let c): (path, detail) = (c.codingPath + [k], "missing")
-        case .typeMismatch(_, let c), .valueNotFound(_, let c), .dataCorrupted(let c): (path, detail) = (c.codingPath, c.debugDescription)
+        case .typeMismatch(_, let c), .valueNotFound(_, let c), .dataCorrupted(let c):
+            (path, detail) = (c.codingPath, c.debugDescription)
         @unknown default: return e.localizedDescription
         }
         return path.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".") + " — " + detail
@@ -168,9 +192,16 @@ struct NVDResponse: Decodable {
 }
 
 struct NVDCVE: Decodable {
-    struct Text: Decodable { var lang: String; var value: String }
+    struct Text: Decodable {
+        var lang: String
+        var value: String
+    }
     struct Metric: Decodable {
-        struct Data: Decodable { var baseScore: Double; var baseSeverity: String?; var vectorString: String? }
+        struct Data: Decodable {
+            var baseScore: Double
+            var baseSeverity: String?
+            var vectorString: String?
+        }
         var type: String?
         var cvssData: Data
     }
@@ -219,11 +250,14 @@ struct NVDCVE: Decodable {
 extension CVERecord {
     init?(nvd c: NVDCVE) {
         guard c.vulnStatus != "Rejected",
-              let published = NVDClient.nvdDateFormatter.date(from: c.published) else { return nil }
+            let published = NVDClient.nvdDateFormatter.date(from: c.published)
+        else { return nil }
         // Prefer NVD's own (Primary) score, then the CNA's, newest CVSS version first.
-        let metrics = [c.metrics?.cvssMetricV31, c.metrics?.cvssMetricV40, c.metrics?.cvssMetricV30].compactMap { $0 }.flatMap { $0 }
+        let metrics = [c.metrics?.cvssMetricV31, c.metrics?.cvssMetricV40, c.metrics?.cvssMetricV30].compactMap { $0 }
+            .flatMap { $0 }
         guard let m = metrics.first(where: { $0.type == "Primary" }) ?? metrics.first,
-              let sev = m.cvssData.baseSeverity.flatMap(Severity.init(rawValue:)) else { return nil }
+            let sev = m.cvssData.baseSeverity.flatMap(Severity.init(rawValue:))
+        else { return nil }
 
         var ranges = Set<ProductRange>()
         for node in (c.configurations ?? []).flatMap(\.nodes) {
@@ -239,12 +273,13 @@ extension CVERecord {
         }
         guard !ranges.isEmpty else { return nil }
 
-        self.init(id: c.id, published: published,
-                  lastModified: NVDClient.nvdDateFormatter.date(from: c.lastModified) ?? published,
-                  severity: sev, score: m.cvssData.baseScore, vector: m.cvssData.vectorString ?? "",
-                  summary: c.descriptions?.first(where: { $0.lang == "en" })?.value ?? "",
-                  references: Array((c.references ?? []).map(\.url).prefix(8)),
-                  ranges: Array(ranges))
+        self.init(
+            id: c.id, published: published,
+            lastModified: NVDClient.nvdDateFormatter.date(from: c.lastModified) ?? published,
+            severity: sev, score: m.cvssData.baseScore, vector: m.cvssData.vectorString ?? "",
+            summary: c.descriptions?.first(where: { $0.lang == "en" })?.value ?? "",
+            references: Array((c.references ?? []).map(\.url).prefix(8)),
+            ranges: Array(ranges))
     }
 
     /// cpe:2.3:part:vendor:product:version:... with optional version bounds.
@@ -255,10 +290,11 @@ extension CVERecord {
         guard f.count > 5 else { return nil }
         let end = m.versionEndExcluding ?? m.versionEndIncluding
         guard let end, Version(end) != nil else { return nil }
-        return ProductRange(nvd: true, vendor: f[3], product: f[4],
-                            start: m.versionStartIncluding ?? m.versionStartExcluding,
-                            startInclusive: m.versionStartExcluding == nil,
-                            end: end, endInclusive: m.versionEndExcluding == nil)
+        return ProductRange(
+            nvd: true, vendor: f[3], product: f[4],
+            start: m.versionStartIncluding ?? m.versionStartExcluding,
+            startInclusive: m.versionStartExcluding == nil,
+            end: end, endInclusive: m.versionEndExcluding == nil)
     }
 
     /// CNA "affected" entries: {version, lessThan|lessThanOrEqual} or free text like ">= 3.0, < 3.9".
@@ -270,22 +306,28 @@ extension CVERecord {
         }
         var r: ProductRange?
         if let lt = v.lessThan ?? v.lessThanOrEqual, let end = Version.firstToken(in: lt) {
-            r = ProductRange(nvd: false, vendor: vendor, product: product, start: start(v.version), startInclusive: true,
-                             end: end, endInclusive: v.lessThan == nil)
+            r = ProductRange(
+                nvd: false, vendor: vendor, product: product, start: start(v.version), startInclusive: true,
+                end: end, endInclusive: v.lessThan == nil)
         } else if let text = v.version {
             let upper = text.range(of: #"<=?\s*v?(\d[0-9A-Za-z.\-_]*)"#, options: .regularExpression)
             if let upper {
                 let bound = String(text[upper])
-                let lower = text.range(of: #">=?\s*v?(\d[0-9A-Za-z.\-_]*)"#, options: .regularExpression).map { String(text[$0]) }
-                r = ProductRange(nvd: false, vendor: vendor, product: product,
-                                 start: lower.flatMap(Version.firstToken(in:)),
-                                 startInclusive: lower.map { $0.hasPrefix(">=") } ?? true,
-                                 end: Version.firstToken(in: bound) ?? bound,
-                                 endInclusive: bound.hasPrefix("<="))
-            } else if let m = text.range(of: #"^\s*(\d+(\.\d+)*)\s*-\s*(\d+(\.\d+)*)\s*$"#, options: .regularExpression) {
+                let lower = text.range(of: #">=?\s*v?(\d[0-9A-Za-z.\-_]*)"#, options: .regularExpression).map {
+                    String(text[$0])
+                }
+                r = ProductRange(
+                    nvd: false, vendor: vendor, product: product,
+                    start: lower.flatMap(Version.firstToken(in:)),
+                    startInclusive: lower.map { $0.hasPrefix(">=") } ?? true,
+                    end: Version.firstToken(in: bound) ?? bound,
+                    endInclusive: bound.hasPrefix("<="))
+            } else if let m = text.range(of: #"^\s*(\d+(\.\d+)*)\s*-\s*(\d+(\.\d+)*)\s*$"#, options: .regularExpression)
+            {
                 let sides = text[m].split(separator: "-").map { $0.trimmingCharacters(in: .whitespaces) }
-                r = ProductRange(nvd: false, vendor: vendor, product: product, start: sides[0], startInclusive: true,
-                                 end: sides[1], endInclusive: true)
+                r = ProductRange(
+                    nvd: false, vendor: vendor, product: product, start: sides[0], startInclusive: true,
+                    end: sides[1], endInclusive: true)
             }
         }
         guard var range = r, let ev = Version(range.end) else { return nil }

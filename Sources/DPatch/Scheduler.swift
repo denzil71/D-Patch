@@ -30,15 +30,17 @@ enum Scheduler {
             return
         }
         guard let exe = Bundle.main.executablePath else { return }
-        try FileManager.default.createDirectory(at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try PropertyListSerialization.data(
             fromPropertyList: plist(executable: exe, hour: Prefs.autoscanHour, minute: Prefs.autoscanMinute),
             format: .xml, options: 0)
         try data.write(to: plistURL, options: .atomic)
         let status = try launchctl(["bootstrap", "gui/\(uid)", plistURL.path])
         if status != 0 {
-            throw NSError(domain: "Scheduler", code: Int(status),
-                          userInfo: [NSLocalizedDescriptionKey: "launchctl bootstrap failed (\(status))"])
+            throw NSError(
+                domain: "Scheduler", code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "launchctl bootstrap failed (\(status))"])
         }
     }
 
@@ -46,7 +48,8 @@ enum Scheduler {
     static var needsRepair: Bool {
         guard Prefs.autoscanEnabled else { return false }
         guard let p = NSDictionary(contentsOf: plistURL),
-              let args = p["ProgramArguments"] as? [String] else { return true }
+            let args = p["ProgramArguments"] as? [String]
+        else { return true }
         return args.first != Bundle.main.executablePath
     }
 

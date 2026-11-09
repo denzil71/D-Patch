@@ -4,8 +4,10 @@ import Foundation
 enum ScriptGenerator {
     /// `confirm`: ask before changing anything (the app asks itself before it runs a script).
     /// `rescan`: path of the D-Patch executable to rescan with afterwards, so the app's list refreshes.
-    static func script(for findings: [Finding], confirm: Bool = true, rescan: String? = nil,
-                       date: Date = Date()) -> String {
+    static func script(
+        for findings: [Finding], confirm: Bool = true, rescan: String? = nil,
+        date: Date = Date()
+    ) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
         let os = Inventory.macOSItem().version
@@ -19,7 +21,8 @@ enum ScriptGenerator {
             "# Addresses:",
         ]
         for f in findings.sorted(by: { $0.cve.id < $1.cve.id }) {
-            let line = "#   \(f.cve.id)  \(f.cve.severity.rawValue) \(f.cve.score)  \(f.item.name) \(f.item.version), fixed in \(f.fixedIn)"
+            let line =
+                "#   \(f.cve.id)  \(f.cve.severity.rawValue) \(f.cve.score)  \(f.item.name) \(f.item.version), fixed in \(f.fixedIn)"
             lines.append(line.components(separatedBy: .newlines).joined(separator: " "))
         }
 
@@ -73,9 +76,11 @@ enum ScriptGenerator {
                 case .brewCaskReplace:
                     lines.append("# Apps installed outside Homebrew: replace them with the current Homebrew cask")
                 case .appStore:
-                    lines += ["# Mac App Store apps (requires being signed in to the App Store)",
-                              "command -v mas >/dev/null 2>&1 || run \"$BREW\" install mas",
-                              "MAS=\"$(command -v mas || echo \"$(dirname \"$BREW\")/mas\")\""]
+                    lines += [
+                        "# Mac App Store apps (requires being signed in to the App Store)",
+                        "command -v mas >/dev/null 2>&1 || run \"$BREW\" install mas",
+                        "MAS=\"$(command -v mas || echo \"$(dirname \"$BREW\")/mas\")\"",
+                    ]
                 case .softwareUpdate:
                     lines.append("# Apple software updates (needs an administrator password)")
                 }
@@ -84,8 +89,10 @@ enum ScriptGenerator {
         }
 
         if let exe = rescan {
-            lines += ["", "echo", "echo \"==> Rescanning so D-Patch shows what is still open…\"",
-                      "\(shellQuote(exe)) --scan | tail -1"]
+            lines += [
+                "", "echo", "echo \"==> Rescanning so D-Patch shows what is still open…\"",
+                "\(shellQuote(exe)) --scan | tail -1",
+            ]
         }
         lines += [
             "",
@@ -112,7 +119,9 @@ enum ScriptGenerator {
         // A newer macOS update includes the fixes of an older one; install only the newest.
         let macOS = fixes.filter { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") }
         if let newest = macOS.max(by: { Version.isLess($0.toVersion, $1.toVersion) }) {
-            fixes.removeAll { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") && $0.target != newest.target }
+            fixes.removeAll {
+                $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") && $0.target != newest.target
+            }
         }
         let order: [FixMethod] = [.brewFormula, .brewCask, .brewCaskReplace, .appStore, .softwareUpdate]
         fixes.sort { (order.firstIndex(of: $0.method)!, $0.target) < (order.firstIndex(of: $1.method)!, $1.target) }
@@ -140,12 +149,16 @@ enum ScriptGenerator {
             case .brewCask:
                 steps.append("Upgrade the **\(name(fix))** app to \(to) with Homebrew.")
             case .brewCaskReplace:
-                steps.append("Replace **\(name(fix))**, which was installed outside Homebrew, with Homebrew's copy (\(to)). Homebrew keeps it updated from then on.")
+                steps.append(
+                    "Replace **\(name(fix))**, which was installed outside Homebrew, with Homebrew's copy (\(to)). Homebrew keeps it updated from then on."
+                )
             case .appStore:
                 steps.append("Update **\(name(fix))** to \(to) from the Mac App Store.")
             case .softwareUpdate:
                 let notes = fix.notesLink.map { " [Read Apple's notes](\($0.url.absoluteString))" } ?? ""
-                steps.append("Install **\(name(fix)) \(to)** with Apple Software Update. It asks for your administrator password, and the Mac may need to restart.\(notes)")
+                steps.append(
+                    "Install **\(name(fix)) \(to)** with Apple Software Update. It asks for your administrator password, and the Mac may need to restart.\(notes)"
+                )
             }
         }
         if rescan {
