@@ -136,7 +136,8 @@ struct FindingRow: View {
                     .padding(.leading, 30)
                     .padding(.top, 10)
                     .padding(.bottom, 6)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Fade only: a move transition made the text slide out from under the info row.
+                    .transition(.opacity)
             }
         }
         .padding(.vertical, 6)
