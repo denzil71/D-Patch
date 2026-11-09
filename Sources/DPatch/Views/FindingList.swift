@@ -23,6 +23,7 @@ struct FindingList: View {
                     Divider()
                     if visible.isEmpty {
                         emptyState
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         // Not a List: on macOS its rows keep their first height, so an expanded row has no room.
                         ScrollView {
@@ -43,6 +44,7 @@ struct FindingList: View {
                         .background(Color(nsColor: .textBackgroundColor))
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .navigationTitle(title)
