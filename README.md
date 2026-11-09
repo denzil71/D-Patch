@@ -72,6 +72,8 @@ The first build takes a minute or so, because it compiles for each architecture.
   xcode-select --install
   ```
 
+- **`plugin for module 'SwiftUIMacros' not found`** (with `external macro implementation type 'SwiftUIMacros.StateMacro' could not be found`) — Command Line Tools 27.2's macOS SDK needs a SwiftUI macro plugin that only Xcode includes. `build.sh` works around this by building against an older SDK that's still installed (it prints `Note: building against MacOSX26.5.sdk…`). If no older SDK is left, install Xcode and run `sudo xcode-select --switch /Applications/Xcode.app`, or point `SDKROOT` at an older macOS SDK.
+- **`lipo: same architectures (x86_64) found`** — an older `build.sh` with Swift 6.4's SwiftPM, which writes both architectures to the same file. Update to the current `build.sh`.
 - **`package ... is using Swift tools version 5.9.0 but the installed version is ...`** — the tools are too old. Update them as above.
 - **`You have not agreed to the Xcode license agreements`** — Xcode is the active toolchain and its licence hasn't been accepted. Run `sudo xcodebuild -license accept`, or switch to the Command Line Tools with `sudo xcode-select --switch /Library/Developer/CommandLineTools`.
 - **`compiled module was created by a different version of the compiler`, or `PCH was compiled with module cache path`** — the build folder is left over from other tools or another location. Delete it with `rm -rf .build build`, then build again.
