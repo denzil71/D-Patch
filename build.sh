@@ -8,6 +8,7 @@ cd "$(dirname "$0")"
 
 VERSION="0.4.2"
 BUILD_NUMBER="6"
+MIN_MACOS="14.0"
 APP="build/D-Patch.app"
 
 INSTALL=0
@@ -27,13 +28,23 @@ trap 'rm -rf "$WORK"' EXIT
 
 source Scripts/select-sdk.sh
 
+# Swift Build links with the toolchain's clang directly, which stamps the deployment target as the
+# SDK version in LC_BUILD_VERSION. macOS picks the app's appearance from that stamp, so a macOS 14
+# stamp makes the whole UI fall back to the pre-Tahoe design (no Liquid Glass sidebar). Pass the
+# real SDK version to the linker explicitly.
+SDK_VERSION="$(
+    /usr/libexec/PlistBuddy -c 'Print :Version' "${SDKROOT:-$(xcrun --show-sdk-path)}/SDKSettings.plist" 2>/dev/null \
+        || xcrun --show-sdk-version
+)"
+LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
+
 # One build per architecture, then merged with lipo (a multi-arch `swift build` needs full Xcode).
 # Each binary is copied out straight away: newer SwiftPM (Swift Build) writes every architecture
 # to the same output path.
 BINS=()
 BIN_DIRS=()
-for TRIPLE in arm64-apple-macosx14.0 x86_64-apple-macosx14.0; do
-    swift build -c release --triple "$TRIPLE"
+for TRIPLE in arm64-apple-macosx$MIN_MACOS x86_64-apple-macosx$MIN_MACOS; do
+    swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}"
     BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path)"
     BIN="$WORK/DPatch-${TRIPLE%%-*}"
     cp "$BIN_DIR/DPatch" "$BIN"
