@@ -6,9 +6,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Temporary CI diagnostics: report any failing command as a run annotation.
-trap 'echo "::error::build.sh failed at line $LINENO: $BASH_COMMAND (exit $?)"' ERR
-
 VERSION="0.4.3"
 BUILD_NUMBER="7"
 MIN_MACOS="14.0"
@@ -29,28 +26,26 @@ done
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# On CI, report a failing command as an annotation so it is visible without reading the whole log.
+trap '[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::error::build.sh failed at line $LINENO: $BASH_COMMAND (exit $?)"' ERR
+
+# Surface a failure as a CI annotation when running on GitHub Actions.
+report_failure() {
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        echo "::error::$1"
+    fi
+}
+
 source Scripts/select-sdk.sh
 
 # SwiftPM has two build engines, and they differ in how they handle resources: the Swift Build
-# engine emits a proper resource bundle and generates a Bundle.module accessor that searches the
-# app's Contents/Resources, while the classic engine generates an accessor that only searches
-# next to the app bundle and at the build machine's absolute path — and fatalErrors when it
-# finds neither, killing the app the first time it highlights a script. Those locations cannot
+# engine emits a proper dependency resource bundle and generates a Bundle.module accessor that
+# searches the app's Contents/Resources, while the classic engine generates an accessor that only
+# searches next to the app bundle and at the build machine's absolute path — and fatalErrors when
+# it finds neither, killing the app the first time it highlights a script. Those locations cannot
 # be packaged for the app root (codesign rejects unsealed contents in the bundle root), so the
-# app must be built with the Swift Build engine. Use it when the toolchain has it and fail the
-# build if the binary still carries the classic engine's accessor.
-SWIFT_BUILD_ARGS=()
-if swift build --build-system swiftbuild --show-bin-path >/dev/null 2>&1; then
-    SWIFT_BUILD_ARGS=(--build-system swiftbuild)
-else
-    echo "warning: toolchain has no Swift Build engine (--build-system swiftbuild); falling back to the classic engine" >&2
-fi
-
-# Temporary CI diagnostics: surface the toolchain and engine choice as run annotations.
-if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-    echo "::notice::swift=$(swift --version 2>&1 | tr '\n' ' ')"
-    echo "::notice::engine=${SWIFT_BUILD_ARGS[*]-classic-default}"
-fi
+# binary must be built with the Swift Build engine; the check below fails the build if not.
+BUILD_ARGS=(-c release --arch arm64 --arch x86_64 --build-system swiftbuild)
 
 # Swift Build links with the toolchain's clang directly, which stamps the deployment target as the
 # SDK version in LC_BUILD_VERSION. macOS picks the app's appearance from that stamp, so a macOS 14
@@ -62,26 +57,14 @@ SDK_VERSION="$(
 )"
 LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
 
-# One build per architecture, then merged with lipo (a multi-arch `swift build` needs full Xcode).
-# Each binary is copied out straight away: newer SwiftPM (Swift Build) writes every architecture
-# to the same output path.
-BINS=()
-BIN_DIRS=()
-for TRIPLE in arm64-apple-macosx$MIN_MACOS x86_64-apple-macosx$MIN_MACOS; do
-    if ! swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}" ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"} 2>&1 | tee "$WORK/build-$TRIPLE.log"; then
-        echo "::error::swift build failed for $TRIPLE: $(tail -5 "$WORK/build-$TRIPLE.log" | tr '\n' ' ')"
-        exit 1
-    fi
-    BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"})"
-    BIN="$WORK/DPatch-${TRIPLE%%-*}"
-    cp "$BIN_DIR/DPatch" "$BIN"
-    BINS+=("$BIN")
-    BIN_DIRS+=("$BIN_DIR")
-done
+# One universal build (the package's platforms declare macOS 14): Swift Build compiles both
+# architectures and emits a fat binary — no per-architecture builds or lipo merging needed.
+swift build "${BUILD_ARGS[@]}" "${LINK_FLAGS[@]}"
+BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 
 SIGNED="$WORK/D-Patch.app"
 mkdir -p "$SIGNED/Contents/MacOS" "$SIGNED/Contents/Resources"
-lipo -create "${BINS[@]}" -output "$SIGNED/Contents/MacOS/DPatch"
+cp "$BIN_DIR/DPatch" "$SIGNED/Contents/MacOS/DPatch"
 
 ICONSET="$WORK/AppIcon.iconset"
 swift Scripts/make-icon.swift "$ICONSET"
@@ -91,28 +74,21 @@ iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
 # products and Bundle.module finds them in the app's Contents/Resources. Verify that every bundle
 # is actually there: a missing one cannot be worked around, because the only other place an
 # accessor searches is next to the app bundle, where codesign rejects unsealed contents.
-if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-    for DIR in "${BIN_DIRS[@]}"; do
-        echo "::notice::bin-dir=$DIR: $(ls "$DIR" | tr '\n' ' ')"
-    done
-fi
-
 BUNDLES=0
-for DIR in "${BIN_DIRS[@]}"; do
-    for BUNDLE in "$DIR"/*.bundle; do
-        [ -e "$BUNDLE" ] || continue
-        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$(basename "$BUNDLE")"
-        BUNDLES=$((BUNDLES + 1))
-        if [ -z "$(find "$SIGNED/Contents/Resources/$(basename "$BUNDLE")" -type f -print -quit)" ]; then
-            echo "Resource bundle was copied but is empty: $(basename "$BUNDLE")" >&2
-            exit 1
-        fi
-    done
+for BUNDLE in "$BIN_DIR"/*.bundle; do
+    [ -e "$BUNDLE" ] || continue
+    ditto "$BUNDLE" "$SIGNED/Contents/Resources/$(basename "$BUNDLE")"
+    BUNDLES=$((BUNDLES + 1))
+    if [ -z "$(find "$SIGNED/Contents/Resources/$(basename "$BUNDLE")" -type f -print -quit)" ]; then
+        report_failure "resource bundle was copied but is empty: $(basename "$BUNDLE")"
+        echo "Resource bundle was copied but is empty: $(basename "$BUNDLE")" >&2
+        exit 1
+    fi
 done
 
 # The binary uses SwiftPM resource accessors, so it must ship at least one resource bundle.
 if (( BUNDLES == 0 )) && grep -aq resource_bundle_accessor "$SIGNED/Contents/MacOS/DPatch"; then
-    echo "::error::the binary references SwiftPM resource bundles but none were copied into the app"
+    report_failure "the binary references SwiftPM resource bundles but none were copied into the app"
     echo "The binary references SwiftPM resource bundles but none were copied into the app" >&2
     exit 1
 fi
@@ -122,13 +98,8 @@ fi
 # installed app and fatalErrors the first time a script is highlighted, so fail instead of
 # shipping a crash.
 if grep -aq 'could not load resource bundle' "$SIGNED/Contents/MacOS/DPatch"; then
-    echo "::error::binary carries the classic SwiftPM resource accessor, which can never find its bundle in an installed app"
-    cat >&2 <<'EOF'
-The binary uses the classic SwiftPM resource accessor, which only searches next to the app
-bundle and at the build machine's absolute path. It cannot find its bundle in an installed app
-and fatalErrors the first time a script is highlighted. Build with the Swift Build engine
-(swift build --build-system swiftbuild) instead.
-EOF
+    report_failure "binary carries the classic SwiftPM resource accessor, which can never find its bundle in an installed app"
+    echo "The binary uses the classic SwiftPM resource accessor, which only searches next to the app bundle and at the build machine's absolute path. Build with the Swift Build engine (--build-system swiftbuild) instead." >&2
     exit 1
 fi
 
@@ -145,7 +116,7 @@ cat > "$SIGNED/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSMinimumSystemVersion</key><string>${MIN_MACOS}</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
