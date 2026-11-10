@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage("nvdAPIKey") private var apiKey = ""
     @AppStorage("notifyAfterAutoscan") private var notify = true
     @AppStorage("severities") private var severitiesRaw = "CRITICAL,HIGH"
+    @AppStorage("checkForUpdates") private var checkForUpdates = true
+    @ObservedObject private var updates = UpdateChecker.shared
     @State private var scheduleError: String?
 
     private var selectedSeverities: Set<Severity> {
@@ -66,6 +68,24 @@ struct SettingsView: View {
                 }
                 Text(
                     "Scans look for CVEs at the ticked levels. Medium and Low add many more CVEs, so the first scan after ticking them takes longer."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $checkForUpdates)
+                HStack {
+                    Text(updates.status ?? "You have D-Patch \(UpdateChecker.currentVersion ?? "(development build)").")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if updates.isChecking { ProgressView().controlSize(.small) }
+                    Button("Check Now") { Task { await updates.check(userInitiated: true) } }
+                        .disabled(updates.isChecking)
+                }
+                Text(
+                    "Once a day, D-Patch asks GitHub for the latest release and, if it's newer, shows a notice with a link to it. Nothing is downloaded or installed for you. You can also choose D-Patch › Check for Updates… at any time."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

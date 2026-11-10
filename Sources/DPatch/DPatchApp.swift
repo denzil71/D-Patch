@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         // Keep the scheduled scan pointing at this copy of the app if it was moved.
         if Scheduler.needsRepair { try? Scheduler.apply() }
+        // Demo data is for trying the interface, so don't interrupt it with update notices.
+        if !FixtureData.isActive { MainActor.assumeIsolated { UpdateChecker.shared.start() } }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -52,6 +54,9 @@ struct DPatchApp: App {
                 .frame(minWidth: 900, minHeight: 560)
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await UpdateChecker.shared.check(userInitiated: true) } }
+            }
             CommandGroup(after: .newItem) {
                 Button("Scan Now") { model.scan() }
                     .keyboardShortcut("r")

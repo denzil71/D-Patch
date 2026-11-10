@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var updates = UpdateChecker.shared
     @State private var patch: PatchRequest?
 
     var body: some View {
@@ -35,6 +36,21 @@ struct ContentView: View {
                 .disabled(model.checked.isEmpty)
                 .help("Download and install the fixes for the ticked CVEs")
             }
+        }
+        .alert(
+            updates.notice?.title ?? "",
+            isPresented: Binding(get: { updates.notice != nil }, set: { if !$0 { updates.notice = nil } }),
+            presenting: updates.notice
+        ) { notice in
+            if let update = notice.update {
+                Button("View Release") { NSWorkspace.shared.open(update.page) }
+                Button("Skip This Version") { updates.skip(update.version) }
+                Button("Later", role: .cancel) {}
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: { notice in
+            Text(notice.message)
         }
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(item: $patch) { PatchSheet(request: $0) { model.checked.removeAll() } }
