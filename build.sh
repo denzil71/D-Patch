@@ -60,15 +60,48 @@ ICONSET="$WORK/AppIcon.iconset"
 swift Scripts/make-icon.swift "$ICONSET"
 iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
 
-# SwiftPM dependency resource bundles (e.g. HighlightSwift's highlight.js) sit next to the
-# built products; Bundle.module finds them in the app's Contents/Resources and would
-# fatalError if they were missing.
+# SwiftPM dependency resource bundles (e.g. HighlightSwift's highlight.js) sit next to the built
+# products. Which paths the generated Bundle.module accessor searches depends on the toolchain:
+# the Swift Build backend looks in the app's Contents/Resources, while classic SwiftPM with an
+# explicit --triple (as on CI) generates an accessor that only looks next to the app bundle and
+# at the build machine's absolute path — and fatalErrors when it finds neither, killing the app
+# the first time it highlights a script. Ship the bundles in both places, then verify.
+if grep -aqE '\.build/[A-Za-z0-9_.-]+/(release|debug)/[A-Za-z0-9_]+\.bundle' "$SIGNED/Contents/MacOS/DPatch"; then
+    ACCESSOR_LOOKS_AT_ROOT=1
+else
+    ACCESSOR_LOOKS_AT_ROOT=0
+fi
+
+BUNDLES=0
 for DIR in "${BIN_DIRS[@]}"; do
     for BUNDLE in "$DIR"/*.bundle; do
         [ -e "$BUNDLE" ] || continue
-        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$(basename "$BUNDLE")"
+        NAME=$(basename "$BUNDLE")
+        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$NAME"
+        if (( ACCESSOR_LOOKS_AT_ROOT )); then
+            ditto "$BUNDLE" "$SIGNED/$NAME"
+        fi
+        BUNDLES=$((BUNDLES + 1))
+
+        FOUND=0
+        for PLACE in "$SIGNED/Contents/Resources/$NAME" "$SIGNED/$NAME"; do
+            if [ -d "$PLACE" ] && [ -n "$(find "$PLACE" -type f -print -quit)" ]; then
+                FOUND=1
+                break
+            fi
+        done
+        if (( ! FOUND )); then
+            echo "Resource bundle is not reachable by the app: $NAME" >&2
+            exit 1
+        fi
     done
 done
+
+# The binary uses SwiftPM resource accessors, so it must ship at least one resource bundle.
+if (( BUNDLES == 0 )) && grep -aq resource_bundle_accessor "$SIGNED/Contents/MacOS/DPatch"; then
+    echo "The binary references SwiftPM resource bundles but none were copied into the app" >&2
+    exit 1
+fi
 
 cat > "$SIGNED/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

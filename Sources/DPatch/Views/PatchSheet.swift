@@ -313,11 +313,41 @@ private final class NoInitialFocusView: NSView {
 /// `CodeText` view highlights only after it appears, so expanding the Script section first showed
 /// plain text and then faded the colours in; the sheet highlights up front instead and the
 /// section renders coloured on its first frame.
-private enum ScriptHighlighter {
+enum ScriptHighlighter {
     private static let highlight = Highlight()
 
+    /// HighlightSwift loads highlight.js through its SwiftPM resource bundle accessor, which
+    /// fatalErrors when the bundle is missing (a damaged or wrongly packaged install), taking the
+    /// whole sheet down with it. Only highlight when the bundle is present where the accessors
+    /// look — the app's Contents/Resources and, for the accessor variant classic SwiftPM
+    /// generates, next to the app bundle — and show plain text otherwise.
+    private static let bundlePresent: Bool = {
+        highlightJSReachable(in: [Bundle.main.resourceURL, Bundle.main.bundleURL].compactMap { $0 })
+    }()
+
+    /// True when a SwiftPM resource bundle under one of `directories` contains highlight.min.js,
+    /// in either the nested (Contents/Resources) or flat layout.
+    static func highlightJSReachable(in directories: [URL]) -> Bool {
+        for directory in directories {
+            let bundles =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil)) ?? []
+            for bundle in bundles where bundle.pathExtension == "bundle" {
+                for js in [
+                    bundle.appendingPathComponent("highlight.min.js"),
+                    bundle.appendingPathComponent("Contents/Resources/highlight.min.js"),
+                ]
+                where FileManager.default.fileExists(atPath: js.path) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     static func attributed(script: String, dark: Bool) async -> AttributedString? {
-        try? await highlight.attributedText(
+        guard bundlePresent else { return nil }
+        return try? await highlight.attributedText(
             script, language: .bash,
             colors: dark ? .dark(.xcode) : .light(.xcode))
     }
