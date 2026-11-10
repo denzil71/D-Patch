@@ -6,6 +6,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Temporary CI diagnostics: report any failing command as a run annotation.
+trap 'echo "::error::build.sh failed at line $LINENO: $BASH_COMMAND (exit $?)"' ERR
+
 VERSION="0.4.3"
 BUILD_NUMBER="7"
 MIN_MACOS="14.0"
@@ -88,6 +91,12 @@ iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
 # products and Bundle.module finds them in the app's Contents/Resources. Verify that every bundle
 # is actually there: a missing one cannot be worked around, because the only other place an
 # accessor searches is next to the app bundle, where codesign rejects unsealed contents.
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    for DIR in "${BIN_DIRS[@]}"; do
+        echo "::notice::bin-dir=$DIR: $(ls "$DIR" | tr '\n' ' ')"
+    done
+fi
+
 BUNDLES=0
 for DIR in "${BIN_DIRS[@]}"; do
     for BUNDLE in "$DIR"/*.bundle; do
