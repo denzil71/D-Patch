@@ -82,4 +82,18 @@ enum Prefs {
         get { d.object(forKey: "notifyAfterAutoscan") as? Bool ?? true }
         set { d.set(newValue, forKey: "notifyAfterAutoscan") }
     }
+    /// Check GitHub for a newer release once a day.
+    static var checkForUpdates: Bool {
+        get { d.object(forKey: "checkForUpdates") as? Bool ?? true }
+        set { d.set(newValue, forKey: "checkForUpdates") }
+    }
+    static var lastUpdateCheck: Date? {
+        get { d.object(forKey: "lastUpdateCheck") as? Date }
+        set { d.set(newValue, forKey: "lastUpdateCheck") }
+    }
+    /// A release the user chose to skip; automatic checks don't offer it again.
+    static var skippedUpdateVersion: String? {
+        get { d.string(forKey: "skippedUpdateVersion") }
+        set { d.set(newValue, forKey: "skippedUpdateVersion") }
+    }
 }

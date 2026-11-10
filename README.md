@@ -23,6 +23,9 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
 ### Automatic scan
 **Settings › Automatic scan** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`.
 
+### Updates
+D-Patch checks GitHub once a day for a newer release and, if there is one, shows a notice with a link to its release page (**View Release**, **Skip This Version** or **Later**). Nothing is downloaded or installed automatically. Turn it off in **Settings › Updates**, or check any time with **D-Patch › Check for Updates…**. Checks are skipped while demo data is loaded.
+
 ### NVD API key
 Without a key the NVD allows 5 requests per 30 seconds. A free key ([request one](https://nvd.nist.gov/developers/request-an-api-key)) entered in **Settings** raises that to 50.
 
