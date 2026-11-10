@@ -43,6 +43,12 @@ else
     echo "warning: toolchain has no Swift Build engine (--build-system swiftbuild); falling back to the classic engine" >&2
 fi
 
+# Temporary CI diagnostics: surface the toolchain and engine choice as run annotations.
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::notice::swift=$(swift --version 2>&1 | tr '\n' ' ')"
+    echo "::notice::engine=${SWIFT_BUILD_ARGS[*]-classic-default}"
+fi
+
 # Swift Build links with the toolchain's clang directly, which stamps the deployment target as the
 # SDK version in LC_BUILD_VERSION. macOS picks the app's appearance from that stamp, so a macOS 14
 # stamp makes the whole UI fall back to the pre-Tahoe design (no Liquid Glass sidebar). Pass the
@@ -59,7 +65,10 @@ LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xli
 BINS=()
 BIN_DIRS=()
 for TRIPLE in arm64-apple-macosx$MIN_MACOS x86_64-apple-macosx$MIN_MACOS; do
-    swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}" ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"}
+    if ! swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}" ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"} 2>&1 | tee "$WORK/build-$TRIPLE.log"; then
+        echo "::error::swift build failed for $TRIPLE: $(tail -5 "$WORK/build-$TRIPLE.log" | tr '\n' ' ')"
+        exit 1
+    fi
     BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"})"
     BIN="$WORK/DPatch-${TRIPLE%%-*}"
     cp "$BIN_DIR/DPatch" "$BIN"
@@ -94,6 +103,7 @@ done
 
 # The binary uses SwiftPM resource accessors, so it must ship at least one resource bundle.
 if (( BUNDLES == 0 )) && grep -aq resource_bundle_accessor "$SIGNED/Contents/MacOS/DPatch"; then
+    echo "::error::the binary references SwiftPM resource bundles but none were copied into the app"
     echo "The binary references SwiftPM resource bundles but none were copied into the app" >&2
     exit 1
 fi
@@ -103,6 +113,7 @@ fi
 # installed app and fatalErrors the first time a script is highlighted, so fail instead of
 # shipping a crash.
 if grep -aq 'could not load resource bundle' "$SIGNED/Contents/MacOS/DPatch"; then
+    echo "::error::binary carries the classic SwiftPM resource accessor, which can never find its bundle in an installed app"
     cat >&2 <<'EOF'
 The binary uses the classic SwiftPM resource accessor, which only searches next to the app
 bundle and at the build machine's absolute path. It cannot find its bundle in an installed app
