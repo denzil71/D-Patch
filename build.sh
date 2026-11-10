@@ -28,6 +28,21 @@ trap 'rm -rf "$WORK"' EXIT
 
 source Scripts/select-sdk.sh
 
+# SwiftPM has two build engines, and they differ in how they handle resources: the Swift Build
+# engine emits a proper resource bundle and generates a Bundle.module accessor that searches the
+# app's Contents/Resources, while the classic engine generates an accessor that only searches
+# next to the app bundle and at the build machine's absolute path — and fatalErrors when it
+# finds neither, killing the app the first time it highlights a script. Those locations cannot
+# be packaged for the app root (codesign rejects unsealed contents in the bundle root), so the
+# app must be built with the Swift Build engine. Use it when the toolchain has it and fail the
+# build if the binary still carries the classic engine's accessor.
+SWIFT_BUILD_ARGS=()
+if swift build --build-system swiftbuild --show-bin-path >/dev/null 2>&1; then
+    SWIFT_BUILD_ARGS=(--build-system swiftbuild)
+else
+    echo "warning: toolchain has no Swift Build engine (--build-system swiftbuild); falling back to the classic engine" >&2
+fi
+
 # Swift Build links with the toolchain's clang directly, which stamps the deployment target as the
 # SDK version in LC_BUILD_VERSION. macOS picks the app's appearance from that stamp, so a macOS 14
 # stamp makes the whole UI fall back to the pre-Tahoe design (no Liquid Glass sidebar). Pass the
@@ -44,8 +59,8 @@ LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xli
 BINS=()
 BIN_DIRS=()
 for TRIPLE in arm64-apple-macosx$MIN_MACOS x86_64-apple-macosx$MIN_MACOS; do
-    swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}"
-    BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path)"
+    swift build -c release --triple "$TRIPLE" "${LINK_FLAGS[@]}" ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"}
+    BIN_DIR="$(swift build -c release --triple "$TRIPLE" --show-bin-path ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"})"
     BIN="$WORK/DPatch-${TRIPLE%%-*}"
     cp "$BIN_DIR/DPatch" "$BIN"
     BINS+=("$BIN")
@@ -61,37 +76,17 @@ swift Scripts/make-icon.swift "$ICONSET"
 iconutil -c icns "$ICONSET" -o "$SIGNED/Contents/Resources/AppIcon.icns"
 
 # SwiftPM dependency resource bundles (e.g. HighlightSwift's highlight.js) sit next to the built
-# products. Which paths the generated Bundle.module accessor searches depends on the toolchain:
-# the Swift Build backend looks in the app's Contents/Resources, while classic SwiftPM with an
-# explicit --triple (as on CI) generates an accessor that only looks next to the app bundle and
-# at the build machine's absolute path — and fatalErrors when it finds neither, killing the app
-# the first time it highlights a script. Ship the bundles in both places, then verify.
-if grep -aqE '\.build/[A-Za-z0-9_.-]+/(release|debug)/[A-Za-z0-9_]+\.bundle' "$SIGNED/Contents/MacOS/DPatch"; then
-    ACCESSOR_LOOKS_AT_ROOT=1
-else
-    ACCESSOR_LOOKS_AT_ROOT=0
-fi
-
+# products and Bundle.module finds them in the app's Contents/Resources. Verify that every bundle
+# is actually there: a missing one cannot be worked around, because the only other place an
+# accessor searches is next to the app bundle, where codesign rejects unsealed contents.
 BUNDLES=0
 for DIR in "${BIN_DIRS[@]}"; do
     for BUNDLE in "$DIR"/*.bundle; do
         [ -e "$BUNDLE" ] || continue
-        NAME=$(basename "$BUNDLE")
-        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$NAME"
-        if (( ACCESSOR_LOOKS_AT_ROOT )); then
-            ditto "$BUNDLE" "$SIGNED/$NAME"
-        fi
+        ditto "$BUNDLE" "$SIGNED/Contents/Resources/$(basename "$BUNDLE")"
         BUNDLES=$((BUNDLES + 1))
-
-        FOUND=0
-        for PLACE in "$SIGNED/Contents/Resources/$NAME" "$SIGNED/$NAME"; do
-            if [ -d "$PLACE" ] && [ -n "$(find "$PLACE" -type f -print -quit)" ]; then
-                FOUND=1
-                break
-            fi
-        done
-        if (( ! FOUND )); then
-            echo "Resource bundle is not reachable by the app: $NAME" >&2
+        if [ -z "$(find "$SIGNED/Contents/Resources/$(basename "$BUNDLE")" -type f -print -quit)" ]; then
+            echo "Resource bundle was copied but is empty: $(basename "$BUNDLE")" >&2
             exit 1
         fi
     done
@@ -100,6 +95,20 @@ done
 # The binary uses SwiftPM resource accessors, so it must ship at least one resource bundle.
 if (( BUNDLES == 0 )) && grep -aq resource_bundle_accessor "$SIGNED/Contents/MacOS/DPatch"; then
     echo "The binary references SwiftPM resource bundles but none were copied into the app" >&2
+    exit 1
+fi
+
+# A binary built with the classic engine carries a resource accessor that only searches next to
+# the app bundle and at the build machine's absolute path. It can never find its bundle in an
+# installed app and fatalErrors the first time a script is highlighted, so fail instead of
+# shipping a crash.
+if grep -aq 'could not load resource bundle' "$SIGNED/Contents/MacOS/DPatch"; then
+    cat >&2 <<'EOF'
+The binary uses the classic SwiftPM resource accessor, which only searches next to the app
+bundle and at the build machine's absolute path. It cannot find its bundle in an installed app
+and fatalErrors the first time a script is highlighted. Build with the Swift Build engine
+(swift build --build-system swiftbuild) instead.
+EOF
     exit 1
 fi
 
