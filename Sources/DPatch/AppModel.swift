@@ -88,6 +88,8 @@ final class AppModel: ObservableObject {
     }
 
     var findings: [Finding] { result?.findings ?? [] }
+    /// macOS updates from the last scan, shown above the list whatever the CVEs.
+    var macOSUpdates: [MacOSUpdate] { result?.macOSUpdates ?? [] }
 
     var days: [DaySummary] {
         let cal = Calendar.current

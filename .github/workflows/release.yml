@@ -36,8 +36,7 @@ jobs:
       - name: Check the app
         run: |
           codesign -v build/D-Patch.app
-          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q arm64
-          lipo -archs build/D-Patch.app/Contents/MacOS/DPatch | grep -q x86_64
+          test "$(lipo -archs build/D-Patch.app/Contents/MacOS/DPatch)" = "arm64"
       - name: Write release notes
         env:
           GH_TOKEN: ${{ github.token }}

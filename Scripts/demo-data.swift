@@ -364,6 +364,56 @@ add(
     jq,
     fix(.brewFormula, "jq", "1.7.1", "Homebrew: upgrade formula jq 1.7.0 → 1.7.1"))
 
+// MARK: - macOS updates
+
+/// What Apple Software Update offers, shown at the top of the list whatever the CVEs.
+struct MacOSUpdate: Codable {
+    var label: String
+    var title: String
+    var version: String
+    var isMajor: Bool
+}
+
+let macOSUpdates = [
+    MacOSUpdate(label: "macOS Tahoe 26.6-25G42", title: "macOS Tahoe 26.6", version: "26.6", isMajor: false),
+    MacOSUpdate(label: "macOS 27.0-26A100", title: "macOS 27.0", version: "27.0", isMajor: true),
+]
+
+// MARK: - Other CVE databases
+
+/// Which other databases list each demo CVE, so the badges and details have something to show.
+struct SourceRecord: Codable {
+    var source: String
+    var ids: [String] = []
+    var url: String
+    var note: String?
+}
+
+func kev(_ id: String, added: String, ransomware: Bool = false) -> SourceRecord {
+    SourceRecord(
+        source: "kev",
+        url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=\(id)",
+        note: "Known to be exploited in the wild (listed \(added))"
+            + (ransomware ? "; used in ransomware campaigns." : "."))
+}
+func osv(_ id: String, ghsa: String? = nil) -> SourceRecord {
+    SourceRecord(
+        source: "osv", ids: ghsa.map { [$0] } ?? [], url: "https://osv.dev/vulnerability/\(id)",
+        note: ghsa == nil ? nil : "Also in the GitHub Advisory Database.")
+}
+func euvd(_ euvdID: String) -> SourceRecord {
+    SourceRecord(source: "euvd", ids: [euvdID], url: "https://euvd.enisa.europa.eu/vulnerability/\(euvdID)")
+}
+
+let sources: [String: [SourceRecord]] = [
+    "CVE-2026-50001": [
+        kev("CVE-2026-50001", added: "2026-11-02", ransomware: true), osv("CVE-2026-50001"), euvd("EUVD-2026-90001"),
+    ],
+    "CVE-2026-50004": [osv("CVE-2026-50004", ghsa: "GHSA-demo-node-0004"), euvd("EUVD-2026-90004")],
+    "CVE-2026-50005": [kev("CVE-2026-50005", added: "2026-10-28")],
+    "CVE-2026-50002": [euvd("EUVD-2026-90002")],
+]
+
 // MARK: - Write
 
 let encoder = JSONEncoder()
@@ -377,8 +427,12 @@ func write<T: Encodable>(_ value: T, to name: String) throws {
 try write(cves, to: "cves.json")
 try write(items, to: "inventory.json")
 try write(fixes, to: "fixes.json")
+try write(macOSUpdates, to: "macos-updates.json")
+try write(sources, to: "sources.json")
 
 let severities = Dictionary(grouping: cves, by: \.severity).mapValues(\.count)
 let counts = Severity.allCases.map { "\(severities[$0] ?? 0) \($0.rawValue.lowercased())" }.joined(separator: ", ")
 print("Wrote demo data to \(output.path)")
-print("  \(cves.count) CVEs (\(counts)), \(items.count) installed items, \(fixes.count) fixes")
+print(
+    "  \(cves.count) CVEs (\(counts)), \(items.count) installed items, \(fixes.count) fixes, \(macOSUpdates.count) macOS updates"
+)

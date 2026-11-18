@@ -21,6 +21,10 @@ struct FindingList: View {
                 VStack(spacing: 0) {
                     FilterBar()
                     Divider()
+                    if !model.macOSUpdates.isEmpty {
+                        MacOSUpdatesBanner(updates: model.macOSUpdates)
+                        Divider()
+                    }
                     if visible.isEmpty {
                         emptyState
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -76,6 +80,45 @@ struct FindingList: View {
     }
 }
 
+/// macOS updates Apple Software Update offers, pinned above the CVE list (also when it's empty),
+/// since they're worth installing whether or not a CVE names them.
+private struct MacOSUpdatesBanner: View {
+    let updates: [MacOSUpdate]
+    static let softwareUpdateSettings = URL(
+        string: "x-apple.systempreferences:com.apple.Software-Update-Settings.extension")!
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "apple.logo")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(updates) { update in
+                    HStack(spacing: 8) {
+                        Text("\(update.title) is available").fontWeight(.medium)
+                        if update.isMajor {
+                            Text("Major upgrade")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .overlay(Capsule().stroke(Color.secondary.opacity(0.5)))
+                        }
+                    }
+                    .help(update.label)
+                }
+            }
+            Spacer()
+            Button("Open Software Update") { NSWorkspace.shared.open(Self.softwareUpdateSettings) }
+                .help("Install macOS updates in System Settings › General › Software Update")
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.accentColor.opacity(0.08))
+    }
+}
+
 private struct ListHeader: View {
     @EnvironmentObject var model: AppModel
     var visible: [Finding]
@@ -128,6 +171,7 @@ struct FindingRow: View {
                             .frame(width: 10)
                         SeverityTag(severity: cve.severity, score: cve.score)
                         Text(cve.id).font(.body.monospaced().weight(.medium))
+                        SourceBadges(records: finding.databases)
                         Text("\(finding.item.name) \(finding.item.version)")
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -221,9 +265,17 @@ struct FindingDetail: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            DetailSection(title: "Databases", systemImage: "square.stack.3d.up") {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(finding.databases, id: \.self) { record in
+                        DatabaseLine(cveID: cve.id, record: record)
+                    }
+                }
+                .font(.callout)
+            }
+
             DetailSection(title: "References", systemImage: "link") {
                 VStack(alignment: .leading, spacing: 3) {
-                    Link("NVD — \(cve.id)", destination: URL(string: "https://nvd.nist.gov/vuln/detail/\(cve.id)")!)
                     ForEach(Array(cve.references.enumerated()), id: \.offset) { _, ref in
                         if let url = URL(string: ref) {
                             Link(ref, destination: url).lineLimit(1).truncationMode(.middle)
@@ -260,6 +312,68 @@ struct FindingDetail: View {
             Text(label).foregroundStyle(.secondary)
             Text(value).textSelection(.enabled)
         }
+    }
+}
+
+/// Small labels after the CVE ID naming each database that lists it; KEV stands out because it
+/// means the CVE is being exploited.
+struct SourceBadges: View {
+    let records: [SourceRecord]
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(records, id: \.self) { record in
+                let exploited = record.source == .kev
+                Text(record.source.name)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(exploited ? Color.red : Color.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        exploited ? Color.red.opacity(0.12) : Color.secondary.opacity(0.1),
+                        in: RoundedRectangle(cornerRadius: 3)
+                    )
+                    .help(record.note.map { "\(record.source.fullName): \($0)" } ?? record.source.fullName)
+            }
+        }
+        .fixedSize()
+    }
+}
+
+/// One database's entry in a finding's details: a link to it, its own IDs and any note.
+private struct DatabaseLine: View {
+    let cveID: String
+    let record: SourceRecord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                if let url = URL(string: record.url) {
+                    Link(record.source.fullName, destination: url).help(record.url)
+                } else {
+                    Text(record.source.fullName)
+                }
+                ForEach(record.ids, id: \.self) { id in
+                    if let url = Self.link(for: id) {
+                        Link(id, destination: url).font(.callout.monospaced())
+                    } else {
+                        Text(id).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let note = record.note {
+                Text(note)
+                    .foregroundStyle(record.source == .kev ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// GitHub Advisory IDs link to GitHub; EUVD IDs to ENISA.
+    static func link(for id: String) -> URL? {
+        if id.hasPrefix("GHSA-") { return URL(string: "https://github.com/advisories/\(id)") }
+        if id.hasPrefix("EUVD-") { return URL(string: "https://euvd.enisa.europa.eu/vulnerability/\(id)") }
+        return nil
     }
 }
 
@@ -369,6 +483,8 @@ private struct SeverityChip: View {
             .overlay(Capsule().stroke(on ? level.color.opacity(0.6) : Color.secondary.opacity(0.35)))
         }
         .buttonStyle(.plain)
+        // Keep each chip on one line when the window is narrow.
+        .fixedSize()
         .help(on ? "Hide \(level.label.lowercased()) CVEs" : "Show \(level.label.lowercased()) CVEs")
     }
 }

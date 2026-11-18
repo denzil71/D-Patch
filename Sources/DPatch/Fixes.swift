@@ -71,6 +71,35 @@ final class FixResolver {
         }
     }
 
+    /// Every macOS update softwareupdate offers, smallest first, whether or not it fixes a CVE.
+    func macOSUpdates(installed: String?) async -> [MacOSUpdate] {
+        Self.macOSUpdates(
+            from: await loadSoftwareUpdates().map { ($0.label, $0.title, $0.version) }, installed: installed)
+    }
+
+    /// The macOS entries of softwareupdate's list that are newer than `installed`, smallest first.
+    static func macOSUpdates(
+        from updates: [(label: String, title: String, version: String)], installed: String?
+    ) -> [MacOSUpdate] {
+        let current = installed.flatMap(Version.init)
+        let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
+        let installedMajor = installed.flatMap { major($0) }
+        return
+            updates
+            .filter { $0.title.hasPrefix("macOS") }
+            // Only real updates: softwareupdate can list the installed version again.
+            .filter { u in
+                guard let current, let v = Version(u.version) else { return true }
+                return v > current
+            }
+            .sorted { Version.isLess($0.version, $1.version) }
+            .map { u in
+                MacOSUpdate(
+                    label: u.label, title: u.title, version: u.version,
+                    isMajor: installedMajor.map { $0 != major(u.version) } ?? false)
+            }
+    }
+
     /// Cask versions carry a build after a comma ("4.95.0,242831"); show only the version.
     static func plain(_ v: String) -> String { v.split(separator: ",").first.map(String.init) ?? v }
 

@@ -103,8 +103,16 @@ struct Finding: Codable, Identifiable {
     var item: InventoryItem
     var fixedIn: String
     var fix: Fix
+    /// The databases this CVE appears in; nil for scans made before D-Patch recorded them (NVD only).
+    var sources: [SourceRecord]?
 
     var id: String { "\(cve.id)|\(item.key)" }
+
+    /// Databases listing this CVE, NVD first.
+    var databases: [SourceRecord] { (sources ?? [SourceChecker.nvdRecord(cve.id)]).sorted { $0.source < $1.source } }
+
+    /// CISA lists it as exploited in the wild.
+    var isKnownExploited: Bool { sources?.contains { $0.source == .kev } ?? false }
 
     /// The only fix is a new major macOS version (26.x -> 27).
     var isMajorUpgrade: Bool {
@@ -112,6 +120,18 @@ struct Finding: Codable, Identifiable {
         let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
         return major(fix.toVersion) != major(item.version)
     }
+}
+
+/// A macOS update that Apple Software Update offers, listed whether or not it fixes a CVE.
+struct MacOSUpdate: Codable, Hashable, Identifiable {
+    /// The softwareupdate label, e.g. "macOS Tahoe 26.8-25I12".
+    var label: String
+    var title: String
+    var version: String
+    /// A new major version (26.x → 27) rather than an update to the installed one.
+    var isMajor: Bool
+
+    var id: String { label }
 }
 
 struct ScanResult: Codable {
@@ -123,4 +143,6 @@ struct ScanResult: Codable {
     var itemsChecked: Int
     var findings: [Finding]
     var warnings: [String]
+    /// macOS updates available when the scan ran, smallest first; nil for scans made before this was recorded.
+    var macOSUpdates: [MacOSUpdate]?
 }
