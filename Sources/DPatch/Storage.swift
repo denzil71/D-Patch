@@ -82,6 +82,19 @@ enum Prefs {
         get { d.object(forKey: "notifyAfterAutoscan") as? Bool ?? true }
         set { d.set(newValue, forKey: "notifyAfterAutoscan") }
     }
+    /// Optional CVE databases to cross-check against (NVD is always used); CISA KEV is on by default.
+    static var cveSources: Set<CVESource> {
+        get {
+            guard let raw = d.string(forKey: "cveSources") else { return [.kev] }
+            return Set(raw.split(separator: ",").compactMap { CVESource(rawValue: String($0)) })
+                .intersection(CVESource.optional)
+        }
+        set {
+            d.set(
+                CVESource.optional.filter(newValue.contains).map(\.rawValue).joined(separator: ","),
+                forKey: "cveSources")
+        }
+    }
     /// Check GitHub for a newer release once a day.
     static var checkForUpdates: Bool {
         get { d.object(forKey: "checkForUpdates") as? Bool ?? true }

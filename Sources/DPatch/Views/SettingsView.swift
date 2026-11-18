@@ -1,11 +1,21 @@
 import SwiftUI
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettings()
+                .tabItem { Label("General", systemImage: "gearshape") }
+            DatabaseSettings()
+                .tabItem { Label("CVE Databases", systemImage: "square.stack.3d.up") }
+        }
+    }
+}
+
+/// Automatic scan, severity levels and update checks.
+private struct GeneralSettings: View {
     @AppStorage("autoscanEnabled") private var autoscanEnabled = false
     @AppStorage("autoscanHour") private var hour = 9
     @AppStorage("autoscanMinute") private var minute = 0
-    @AppStorage("lookbackDays") private var lookbackDays = 90
-    @AppStorage("nvdAPIKey") private var apiKey = ""
     @AppStorage("notifyAfterAutoscan") private var notify = true
     @AppStorage("severities") private var severitiesRaw = "CRITICAL,HIGH"
     @AppStorage("checkForUpdates") private var checkForUpdates = true
@@ -90,18 +100,6 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-
-            Section("CVE database") {
-                Picker("Check CVEs published in the last", selection: $lookbackDays) {
-                    ForEach([30, 60, 90, 120, 180, 365], id: \.self) { Text("\($0) days").tag($0) }
-                }
-                SecureField("NVD API key (optional)", text: $apiKey)
-                Text(
-                    "Without a key the NVD limits downloads to 5 requests per 30 seconds, so the first scan takes a few minutes. [Request a free key](https://nvd.nist.gov/developers/request-an-api-key)"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .frame(width: 480)
@@ -118,5 +116,86 @@ struct SettingsView: View {
         } catch {
             scheduleError = error.localizedDescription
         }
+    }
+}
+
+/// NVD (always used) and the optional databases found CVEs are cross-checked against.
+private struct DatabaseSettings: View {
+    @AppStorage("lookbackDays") private var lookbackDays = 90
+    @AppStorage("nvdAPIKey") private var apiKey = ""
+    @AppStorage("cveSources") private var sourcesRaw = CVESource.kev.rawValue
+
+    private var enabled: Set<CVESource> {
+        Set(sourcesRaw.split(separator: ",").compactMap { CVESource(rawValue: String($0)) })
+    }
+
+    private func binding(_ source: CVESource) -> Binding<Bool> {
+        Binding {
+            enabled.contains(source)
+        } set: { on in
+            var set = enabled
+            if on { set.insert(source) } else { set.remove(source) }
+            sourcesRaw = CVESource.optional.filter(set.contains).map(\.rawValue).joined(separator: ",")
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("NIST National Vulnerability Database (NVD)") {
+                Text(
+                    "Always used: the NVD supplies the CVEs and the affected versions that D-Patch matches against this Mac."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Picker("Check CVEs published in the last", selection: $lookbackDays) {
+                    ForEach([30, 60, 90, 120, 180, 365], id: \.self) { Text("\($0) days").tag($0) }
+                }
+                SecureField("NVD API key (optional)", text: $apiKey)
+                Text(
+                    "Without a key the NVD limits downloads to 5 requests per 30 seconds, so the first scan takes a few minutes. [Request a free key](https://nvd.nist.gov/developers/request-an-api-key)"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(isOn: binding(.kev)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(CVESource.kev.fullName)
+                        Text(
+                            "Marks CVEs that are being exploited in the wild. D-Patch downloads CISA's public list, so nothing about this Mac is sent."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: binding(.osv)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(CVESource.osv.fullName)
+                        Text(
+                            "Google's open-source vulnerability database, which also links each CVE to its GitHub Advisory. Looks up each CVE found on this Mac."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: binding(.euvd)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(CVESource.euvd.fullName)
+                        Text("The EU's vulnerability database. Looks up each CVE found on this Mac.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Also check")
+            } footer: {
+                Text(
+                    "Each CVE in the list shows the databases it appears in. OSV.dev and EUVD are sent the IDs of the CVEs found on this Mac (nothing else); their answers are kept for a day. Changes apply from the next scan."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

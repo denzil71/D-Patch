@@ -6,7 +6,13 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
 
 ### Scanning
 - **Inventory** — Homebrew formulae and casks, apps in `/Applications`, `/Applications/Utilities` and `~/Applications` (including Mac App Store apps), and macOS itself.
-- **CVE source** — the NVD 2.0 API, filtered to the CVSS v3 severity levels ticked in **Settings › Severity** (Critical and High by default; Medium and Low optional), for CVEs published in the last 30–365 days (90 by default). Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json`, so later scans fetch only what is new or changed; ticking another level fetches just that level, and unticking one drops it from the cache.
+- **CVE source** — the NVD 2.0 API, filtered to the CVSS v3 severity levels ticked in **Settings › General** (Critical and High by default; Medium and Low optional), for CVEs published in the last 30–365 days (90 by default, set in **Settings › CVE Databases**). Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json`, so later scans fetch only what is new or changed; ticking another level fetches just that level, and unticking one drops it from the cache.
+- **More databases** — each CVE found is also looked up in the databases ticked in **Settings › CVE Databases**, and the list shows which ones it appears in:
+  - **CISA Known Exploited Vulnerabilities (KEV)** — on by default. Marks CVEs that are being exploited in the wild (with whether they're used by ransomware). D-Patch downloads CISA's public list (refreshed every 12 hours), so nothing about the Mac is sent.
+  - **OSV.dev** — optional. Google's open-source vulnerability database, which also gives each CVE's GitHub Advisory (GHSA) ID.
+  - **ENISA EU Vulnerability Database (EUVD)** — optional. The EU's database, with its EUVD ID.
+
+  OSV.dev and EUVD are sent the IDs of the CVEs found on the Mac (nothing else), and their answers are kept for a day in `sources-cache.json`. NVD is always used, because it supplies the affected versions that matching relies on.
 - **Matching** — CVE product names (from NVD CPE configurations and the CNA's affected-product data) are matched to installed items, and the installed version must fall inside an affected range.
 - **Fixes only** — a CVE is listed only if an update exists that moves the item past the fixed version:
   - Homebrew formula or cask → `brew upgrade`
@@ -15,28 +21,29 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
   - macOS, Safari and other Apple software → `softwareupdate --install`
 
 ### Window
+- **macOS updates** — when Apple Software Update offers a macOS update, it's shown at the top of the list, even when no CVE needs it or the list is empty, with **Open Software Update** to install it. A new major version is marked **Major upgrade**.
 - **Left** — dates on which CVEs were published, each with a count of CVEs per severity: critical (red), high (orange), medium (yellow) and low (grey). **All dates** shows everything.
-- **Right** — the CVEs for the selected date. Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector and links. Search by CVE ID, app or keyword.
+- **Right** — the CVEs for the selected date. Each shows badges for the databases it appears in (**NVD**, **KEV** in red, **OSV**, **EUVD**). Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector, the **Databases** listing it (with links, GitHub Advisory and EUVD IDs, and CISA's note for exploited CVEs) and references. Search by CVE ID, app or keyword.
 - **Filters** — above the list: severity chips (click one to hide or show that level), a **Fix** menu (Homebrew, App Store or Apple Software Update) and **Hide major macOS upgrades** (CVEs whose only fix is a new major macOS version). The date counts follow the filters. Ticked CVEs that a filter hides stay ticked and are still patched; the list header says how many are not shown.
 - **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 
 ### Automatic scan
-**Settings › Automatic scan** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`.
+**Settings › General** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`.
 
 ### Updates
-D-Patch checks GitHub once a day for a newer release and, if there is one, shows a notice with a link to its release page (**View Release**, **Skip This Version** or **Later**). Nothing is downloaded or installed automatically. Turn it off in **Settings › Updates**, or check any time with **D-Patch › Check for Updates…**. Checks are skipped while demo data is loaded.
+D-Patch checks GitHub once a day for a newer release and, if there is one, shows a notice with a link to its release page (**View Release**, **Skip This Version** or **Later**). Nothing is downloaded or installed automatically. Turn it off in **Settings › General**, or check any time with **D-Patch › Check for Updates…**. Checks are skipped while demo data is loaded.
 
 ### NVD API key
-Without a key the NVD allows 5 requests per 30 seconds. A free key ([request one](https://nvd.nist.gov/developers/request-an-api-key)) entered in **Settings** raises that to 50.
+Without a key the NVD allows 5 requests per 30 seconds. A free key ([request one](https://nvd.nist.gov/developers/request-an-api-key)) entered in **Settings › CVE Databases** raises that to 50.
 
 ## Building
 
 ### What you need
 
-- **macOS 14 or later.**
+- **macOS 14 or later on a Mac with Apple silicon.** D-Patch is built for Apple silicon only; Intel Macs aren't supported.
 - **Xcode**, free from the Mac App Store. The Command Line Tools alone aren't enough: the HighlightSwift package used for the Patch sheet's script highlighting needs SwiftUI macro plugins (`@Entry`, `#Preview`) that only Xcode includes. When Xcode asks which platforms to install, **macOS** is all you need. It takes about 10–12 GB once installed, and the install needs more free space than that while it unpacks.
 
-You don't need an Apple Developer account, because the app is signed ad hoc. You don't need Homebrew or Rosetta to build either; the Intel half of the universal app is compiled but never run during the build. The first build downloads HighlightSwift from GitHub, so it needs an internet connection.
+You don't need an Apple Developer account, because the app is signed ad hoc. You don't need Homebrew to build either. The first build downloads HighlightSwift from GitHub, so it needs an internet connection.
 
 After installing Xcode, make it the active toolchain and accept its licence (both ask for your password), then let it finish setting up:
 
@@ -60,7 +67,7 @@ Known to work with Xcode 27.2 (Swift 6.4.2) and, on GitHub Actions, Xcode 26.6.
 ```bash
 git clone https://github.com/denzil71/D-Patch.git
 cd D-Patch
-./build.sh            # builds a universal (Apple Silicon + Intel) build/D-Patch.app
+./build.sh            # builds build/D-Patch.app for Apple silicon
 ./build.sh --install  # also copies it to /Applications
 ./build.sh --dmg      # also packages dist/D-Patch-<version>.dmg (unsigned)
 ```
@@ -72,7 +79,6 @@ The first build takes a minute or so, because it compiles for each architecture.
 - **`plugin for module 'SwiftUIMacros' not found`** or **`plugin for module 'PreviewsMacros' not found`** (with `external macro implementation type ... could not be found`) — the Command Line Tools are the active toolchain, not Xcode. Install Xcode, then run `sudo xcode-select --switch /Applications/Xcode.app`. Check with `xcode-select -p`.
 - **`xcrun: error: invalid active developer path`, or `No developer tools were found`** — the active developer folder is missing, for example because Xcode was moved or deleted. Run `sudo xcode-select --switch /Applications/Xcode.app` (or wherever Xcode is).
 - **`this SDK is not supported by the compiler`, or `failed to build module`** — the compiler and the macOS SDK don't match, which usually happens after a macOS update. Update Xcode in the App Store, then delete the build folder with `rm -rf .build build` and build again.
-- **`lipo: same architectures (x86_64) found`** — an older `build.sh` with Swift 6.4's SwiftPM, which writes both architectures to the same file. Update to the current `build.sh`.
 - **`package ... is using Swift tools version 5.9.0 but the installed version is ...`** — Xcode is too old. Update it in the App Store.
 - **`You have not agreed to the Xcode license agreements`** — run `sudo xcodebuild -license accept`.
 - **An error about cloning or fetching `HighlightSwift`** — the first build couldn't download it from GitHub. Check your internet connection and build again.

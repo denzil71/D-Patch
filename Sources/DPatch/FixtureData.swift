@@ -2,8 +2,9 @@ import Foundation
 
 /// Runs the matcher against a fixed CVE and inventory set instead of this Mac's software and NVD.
 /// Enabled by `--fixtures <dir>` or `$DPATCH_FIXTURES`; the directory holds `cves.json`,
-/// `inventory.json` and an optional `fixes.json` keyed by `Finding.id` for fixes that would
-/// otherwise need the network or `softwareupdate`.
+/// `inventory.json`, an optional `fixes.json` keyed by `Finding.id` for fixes that would
+/// otherwise need the network or `softwareupdate`, an optional `macos-updates.json`, and an optional
+/// `sources.json` of other CVE databases' records keyed by CVE ID.
 enum FixtureData {
     static var directory: URL? {
         directory(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
@@ -53,10 +54,19 @@ enum FixtureData {
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
 
+        // Other databases' records come from sources.json, keyed by CVE ID, so demo scans stay offline.
+        let sources =
+            (try? load([String: [SourceRecord]].self, from: directory.appendingPathComponent("sources.json"))) ?? [:]
+        for i in findings.indices {
+            let id = findings[i].cve.id
+            findings[i].sources = [SourceChecker.nvdRecord(id)] + (sources[id] ?? [])
+        }
+
         return ScanResult(
             scannedAt: Date(), lookbackDays: 90, severities: Severity.allCases, cvesChecked: cves.count,
             itemsChecked: items.count, findings: findings,
-            warnings: ["Demo data from \(directory.path); Patch Now is disabled."] + resolver.warnings)
+            warnings: ["Demo data from \(directory.path); Patch Now is disabled."] + resolver.warnings,
+            macOSUpdates: try? load([MacOSUpdate].self, from: directory.appendingPathComponent("macos-updates.json")))
     }
 
     private static func load<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {

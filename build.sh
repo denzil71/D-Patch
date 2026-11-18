@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Builds a universal (Apple Silicon + Intel) D-Patch.app into ./build.
+# Builds D-Patch.app for Apple Silicon (arm64) into ./build.
 # Usage: ./build.sh [--install] [--dmg]
 #   --install  also copy it to /Applications
 #   --dmg      also package it as dist/D-Patch-<version>.dmg (unsigned)
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="0.5.0"
-BUILD_NUMBER="9"
+VERSION="0.6.0"
+BUILD_NUMBER="10"
 MIN_MACOS="14.0"
 APP="build/D-Patch.app"
 
@@ -45,7 +45,8 @@ source Scripts/select-sdk.sh
 # it finds neither, killing the app the first time it highlights a script. Those locations cannot
 # be packaged for the app root (codesign rejects unsealed contents in the bundle root), so the
 # binary must be built with the Swift Build engine; the check below fails the build if not.
-BUILD_ARGS=(-c release --arch arm64 --arch x86_64 --build-system swiftbuild)
+# Apple Silicon only: there's no Intel Mac to test an x86_64 build on.
+BUILD_ARGS=(-c release --arch arm64 --build-system swiftbuild)
 
 # Swift Build links with the toolchain's clang directly, which stamps the deployment target as the
 # SDK version in LC_BUILD_VERSION. macOS picks the app's appearance from that stamp, so a macOS 14
@@ -57,8 +58,7 @@ SDK_VERSION="$(
 )"
 LINK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
 
-# One universal build (the package's platforms declare macOS 14): Swift Build compiles both
-# architectures and emits a fat binary — no per-architecture builds or lipo merging needed.
+# One build for arm64 (the package's platforms declare macOS 14).
 swift build "${BUILD_ARGS[@]}" "${LINK_FLAGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 

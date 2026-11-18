@@ -49,10 +49,18 @@ enum Scanner {
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
 
+        let checker = SourceChecker(enabled: Prefs.cveSources, progress: progress)
+        let sources = await checker.records(for: Array(Set(findings.map(\.cve.id))).sorted())
+        for i in findings.indices { findings[i].sources = sources[findings[i].cve.id] }
+
+        // Listed at the top whether or not they fix a CVE (softwareupdate's list is loaded once per scan).
+        progress("Checking for macOS updates…")
+        let macOSUpdates = await resolver.macOSUpdates(installed: items.first { $0.kind == .macos }?.version)
+
         return ScanResult(
             scannedAt: Date(), lookbackDays: lookback, severities: severities, cvesChecked: cves.count,
             itemsChecked: items.count, findings: findings,
-            warnings: warnings + resolver.warnings)
+            warnings: warnings + resolver.warnings + checker.warnings, macOSUpdates: macOSUpdates)
     }
 
     /// Entry point for `DPatch --scan` (used by the scheduled LaunchAgent).
