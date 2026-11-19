@@ -77,7 +77,7 @@ private struct GeneralSettings: View {
                     .disabled(selectedSeverities == [level])
                 }
                 Text(
-                    "Scans look for CVEs at the ticked levels. Medium and Low add many more CVEs, so the first scan after ticking them takes longer."
+                    "Scans list CVEs at the ticked levels. Every level is downloaded either way, so changing them applies from the next scan without downloading again."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
