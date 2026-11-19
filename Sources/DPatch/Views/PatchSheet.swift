@@ -38,92 +38,108 @@ struct PatchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Patch selected CVEs").font(.title2.weight(.semibold))
 
-            if isDemo {
-                Label("Demo data — Patch Now is disabled so the dummy fixes are not run.", systemImage: "testtube.2")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let url = launched {
-                Label("Patching in Terminal", systemImage: "terminal").font(.headline)
-                Text(
-                    "Follow the progress in the Terminal window. When it finishes, D-Patch rescans and this list updates by itself.\n\nScript: \(url.path)"
-                )
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(
-                    "\(fixes.count) update\(fixes.count == 1 ? "" : "s") will close \(cveCount) CVE\(cveCount == 1 ? "" : "s"):"
-                )
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(fixes, id: \.self) { fix in
-                        Label(fix.summary, systemImage: icon(fix.method))
-                        if let notes = fix.notesLink {
-                            Link(
-                                "Read \(notes.title.replacingOccurrences(of: "Apple: ", with: "Apple's notes: "))",
-                                destination: notes.url
+            // Everything between the title and the buttons scrolls, so a long list of fixes can't
+            // push the script (or the buttons) off the bottom of the fixed-height sheet.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if isDemo {
+                            Label(
+                                "Demo data — Patch Now is disabled so the dummy fixes are not run.",
+                                systemImage: "testtube.2"
                             )
                             .font(.callout)
-                            .padding(.leading, 28)
-                            .help(notes.url.absoluteString)
-                        }
-                    }
-                }
-                .padding(.leading, 4)
-
-                ForEach(notes, id: \.self) { note in
-                    Label(note, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                // A custom disclosure rather than DisclosureGroup: the group gives its content an
-                // unbounded height, so the script's ScrollView could not fill the sheet.
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { showScript.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(showScript ? 90 : 0))
-                        Text("Script")
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(showScript ? "Hide the script" : "Show the script")
-
-                if showScript {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
-                        ScrollView {
-                            Text(scriptText ?? AttributedString(displayScript))
-                                .font(.system(.callout, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
-                        .frame(maxHeight: .infinity)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+
+                        if let url = launched {
+                            Label("Patching in Terminal", systemImage: "terminal").font(.headline)
+                            Text(
+                                "Follow the progress in the Terminal window. When it finishes, D-Patch rescans and this list updates by itself.\n\nScript: \(url.path)"
+                            )
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(
+                                "\(fixes.count) update\(fixes.count == 1 ? "" : "s") will close \(cveCount) CVE\(cveCount == 1 ? "" : "s"):"
+                            )
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(fixes, id: \.self) { fix in
+                                    Label(fix.summary, systemImage: icon(fix.method))
+                                    if let notes = fix.notesLink {
+                                        Link(
+                                            "Read \(notes.title.replacingOccurrences(of: "Apple: ", with: "Apple's notes: "))",
+                                            destination: notes.url
+                                        )
+                                        .font(.callout)
+                                        .padding(.leading, 28)
+                                        .help(notes.url.absoluteString)
+                                    }
+                                }
+                            }
+                            .padding(.leading, 4)
+
+                            ForEach(notes, id: \.self) { note in
+                                Label(note, systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            // A custom disclosure rather than DisclosureGroup: the group gives its content an
+                            // unbounded height, so the script's ScrollView could not fill the sheet.
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { showScript.toggle() }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .rotationEffect(.degrees(showScript ? 90 : 0))
+                                    Text("Script")
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help(showScript ? "Hide the script" : "Show the script")
+                            .id(Self.scriptAnchor)
+
+                            if showScript {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ScriptSteps(steps: ScriptGenerator.steps(for: request.findings, rescan: true))
+                                    ScrollView {
+                                        Text(scriptText ?? AttributedString(displayScript))
+                                            .font(.system(.callout, design: .monospaced))
+                                            .textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(10)
+                                    }
+                                    // A fixed height inside the outer scroll view: most of the sheet, scrolling on its own.
+                                    .frame(height: max(260, sheetHeight - 220))
+                                    .background(Color(nsColor: .textBackgroundColor))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                                }
+                            }
+
+                            if let url = savedTo {
+                                Label("Saved to \(url.path)", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .textSelection(.enabled)
+                            }
+                        }
+
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 12)  // keeps text clear of the scroll bar
                 }
-
-                if let url = savedTo {
-                    Label("Saved to \(url.path)", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .textSelection(.enabled)
+                .onChange(of: showScript) { _, shown in
+                    guard shown else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(Self.scriptAnchor, anchor: .top) }
                 }
             }
 
-            // When the script is open its ScrollView takes the spare height instead.
-            if !showScript || launched != nil {
-                Spacer(minLength: 0)
-            }
             HStack {
                 if launched == nil {
                     Button("Save Script…") { save() }
@@ -147,6 +163,8 @@ struct PatchSheet: View {
             scriptText = await ScriptHighlighter.attributed(script: displayScript, dark: colorScheme == .dark)
         }
     }
+
+    private static let scriptAnchor = "script"
 
     /// Use most of the screen: the script is the main thing to read in this sheet.
     private var sheetWidth: CGFloat {
@@ -253,8 +271,10 @@ private struct ScriptSteps: View {
                 Text("When it runs, this script will:")
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        // Wide enough for "99." on one line; 20 points wrapped the full stop from step 10.
                         Text("\(i + 1).").monospacedDigit().foregroundStyle(.secondary)
-                            .frame(width: 20, alignment: .trailing)
+                            .lineLimit(1)
+                            .frame(width: 28, alignment: .trailing)
                         Text(LocalizedStringKey(step))
                     }
                 }
