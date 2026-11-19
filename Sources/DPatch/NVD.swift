@@ -1,6 +1,11 @@
 import Foundation
 
-/// Fetches CVEs of the chosen severities from the NVD 2.0 API and keeps a local, incrementally updated cache.
+/// Fetches CVEs from the NVD 2.0 API and keeps a local, incrementally updated cache.
+///
+/// Every CVE in the window is downloaded, whatever its severity, and filtered by severity locally.
+/// NVD's `cvssV3Severity` filter only matches CVEs NVD has scored itself, and with its analysis
+/// backlog most new CVEs only carry a CISA (ADP) or vendor (CNA) score for weeks — filtering on the
+/// server hid almost all of them, including Apple's fixes the day they ship.
 struct NVDClient {
     var apiKey: String?
     var severities: [Severity]
@@ -8,94 +13,92 @@ struct NVDClient {
 
     static let endpoint = "https://services.nvd.nist.gov/rest/json/cves/2.0"
     static let maxRangeDays = 120  // NVD limit for one date range
+    static let pageSize = 2000  // NVD maximum
+    /// Bump when the cache's contents change meaning, so older caches are rebuilt.
+    static let cacheFormat = 2
     private static var lastRequest = Date.distantPast
 
     struct Cache: Codable {
         var windowStart: Date
         var fetchedThrough: Date
+        /// Every scored CVE in the window with version data, of any severity.
         var records: [String: CVERecord]
-        /// Levels the records cover; nil in caches written before levels were configurable.
+        /// Only in caches written before format 2, which held just these levels.
         var severities: [Severity]?
+        /// nil for caches written before format 2.
+        var format: Int?
     }
 
-    /// Returns cached + fresh CVEs published within the last `lookbackDays`.
+    /// Returns cached + fresh CVEs published within the last `lookbackDays`, at the chosen severities.
     func update(lookbackDays: Int) async throws -> [CVERecord] {
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: now)!
         var cache: Cache
-        if let old = Storage.load(Cache.self, from: Storage.cacheURL), !old.records.isEmpty,
+        if let old = Storage.load(Cache.self, from: Storage.cacheURL), old.format == Self.cacheFormat,
             now.timeIntervalSince(old.fetchedThrough) < Double(Self.maxRangeDays) * 86_400
         {
             cache = old
-            let had = Set(old.severities ?? Severity.defaults)
-            // Levels no longer wanted are dropped; newly wanted ones are fetched for the whole window.
-            cache.records = cache.records.filter { severities.contains($0.value.severity) }
-            let added = severities.filter { !had.contains($0) }
-            if !added.isEmpty {
-                for r in try await fetch(field: "pub", severities: added, from: start, to: now) {
-                    cache.records[r.id] = r
-                }
-            }
-            let kept = severities.filter { had.contains($0) }
             // Extend the window backwards by publish date when the look-back grew.
-            if start < cache.windowStart, !kept.isEmpty {
-                for r in try await fetch(field: "pub", severities: kept, from: start, to: cache.windowStart) {
+            if start < cache.windowStart {
+                for r in try await fetch(field: "pub", from: start, to: cache.windowStart) {
                     cache.records[r.id] = r
                 }
             }
             // Then pick up everything published or changed since the last scan.
-            for r in try await fetch(
-                field: "lastMod", severities: kept, from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
+            for r in try await fetch(field: "lastMod", from: cache.fetchedThrough.addingTimeInterval(-3600), to: now)
             where r.published >= start {
                 cache.records[r.id] = r
             }
         } else {
-            cache = Cache(windowStart: start, fetchedThrough: now, records: [:])
-            for r in try await fetch(field: "pub", severities: severities, from: start, to: now) {
+            // No cache, a stale one, or one from before format 2 (which missed CVEs NVD hadn't scored).
+            cache = Cache(windowStart: start, fetchedThrough: now, records: [:], format: Self.cacheFormat)
+            for r in try await fetch(field: "pub", from: start, to: now) {
                 cache.records[r.id] = r
             }
         }
-        cache.severities = severities
         cache.windowStart = start
         cache.fetchedThrough = now
+        cache.severities = nil
+        cache.format = Self.cacheFormat
         cache.records = cache.records.filter { $0.value.published >= start }
         try Storage.save(cache, to: Storage.cacheURL)
-        return Array(cache.records.values)
+        return Self.select(Array(cache.records.values), severities: severities)
     }
 
-    private func fetch(field: String, severities: [Severity], from: Date, to: Date) async throws -> [CVERecord] {
+    /// The records at the chosen levels.
+    static func select(_ records: [CVERecord], severities: [Severity]) -> [CVERecord] {
+        let wanted = Set(severities)
+        return records.filter { wanted.contains($0.severity) }
+    }
+
+    private func fetch(field: String, from: Date, to: Date) async throws -> [CVERecord] {
         var out: [CVERecord] = []
-        // Filtering by severity on the server keeps downloads small (all CVEs are ~20x critical + high).
-        for severity in severities.sorted(by: >).map(\.rawValue) {
-            var chunkStart = from
-            while chunkStart < to {
-                let chunkEnd = min(to, chunkStart.addingTimeInterval(Double(Self.maxRangeDays) * 86_400))
-                var index = 0
-                while true {
-                    let page = try await request(
-                        field: field, severity: severity, from: chunkStart, to: chunkEnd, startIndex: index)
-                    out += page.vulnerabilities.compactMap { CVERecord(nvd: $0.cve) }
-                    index += page.resultsPerPage
-                    progress(
-                        "Downloading \(severity.lowercased()) CVEs \(Self.dayFormatter.string(from: chunkStart))–\(Self.dayFormatter.string(from: chunkEnd)): \(min(index, page.totalResults)) of \(page.totalResults)"
-                    )
-                    if page.resultsPerPage == 0 || index >= page.totalResults { break }
-                }
-                chunkStart = chunkEnd
+        var chunkStart = from
+        while chunkStart < to {
+            let chunkEnd = min(to, chunkStart.addingTimeInterval(Double(Self.maxRangeDays) * 86_400))
+            var index = 0
+            while true {
+                let page = try await request(field: field, from: chunkStart, to: chunkEnd, startIndex: index)
+                out += page.vulnerabilities.compactMap { CVERecord(nvd: $0.cve) }
+                index += page.resultsPerPage
+                progress(
+                    "Downloading CVEs \(Self.dayFormatter.string(from: chunkStart))–\(Self.dayFormatter.string(from: chunkEnd)): \(min(index, page.totalResults)) of \(page.totalResults)"
+                )
+                if page.resultsPerPage == 0 || index >= page.totalResults { break }
             }
+            chunkStart = chunkEnd
         }
         return out
     }
 
-    private func request(field: String, severity: String, from: Date, to: Date, startIndex: Int) async throws
+    private func request(field: String, from: Date, to: Date, startIndex: Int) async throws
         -> NVDResponse
     {
         var c = URLComponents(string: Self.endpoint)!
         c.queryItems = [
             URLQueryItem(name: "\(field)StartDate", value: Self.isoFormatter.string(from: from)),
             URLQueryItem(name: "\(field)EndDate", value: Self.isoFormatter.string(from: to)),
-            URLQueryItem(name: "cvssV3Severity", value: severity),
-            URLQueryItem(name: "resultsPerPage", value: "1000"),
+            URLQueryItem(name: "resultsPerPage", value: String(Self.pageSize)),
             URLQueryItem(name: "startIndex", value: String(startIndex)),
             URLQueryItem(name: "noRejected", value: nil),
         ]
@@ -265,12 +268,14 @@ extension CVERecord {
                 if let r = Self.range(cpe: m) { ranges.insert(r) }
             }
         }
+        var cnaRanges: [ProductRange] = []
         for a in (c.affected ?? []).flatMap({ $0.affectedData ?? [] }) {
             guard let vendor = a.vendor, let product = a.product else { continue }
             for v in a.versions ?? [] where v.status == "affected" {
-                if let r = Self.range(vendor: vendor, product: product, v) { ranges.insert(r) }
+                if let r = Self.range(vendor: vendor, product: product, v) { cnaRanges.append(r) }
             }
         }
+        ranges.formUnion(Self.releaseLines(cnaRanges))
         guard !ranges.isEmpty else { return nil }
 
         self.init(
@@ -295,6 +300,34 @@ extension CVERecord {
             start: m.versionStartIncluding ?? m.versionStartExcluding,
             startInclusive: m.versionStartExcluding == nil,
             end: end, endInclusive: m.versionEndExcluding == nil)
+    }
+
+    /// Vendors list a fix per release line as ranges that all start at 0: macOS "< 15.8.3",
+    /// "< 26.7.3", "< 27.2.1". Taken literally, a fully updated 26.7.3 falls inside "< 27.2.1". Each
+    /// range after the lowest therefore starts at its own line: the end's version up to its first
+    /// part that differs from the next-lower end ("26" for 26.7.3 after 15.8.3, "1.3" for 1.3.2
+    /// after 1.2.5). Ranges with their own start, and lone ranges, are left as they are.
+    static func releaseLines(_ ranges: [ProductRange]) -> [ProductRange] {
+        let open = ranges.filter { $0.start == nil }
+        let grouped = Dictionary(grouping: open) { "\($0.vendor.lowercased())|\($0.product.lowercased())" }
+        var result = ranges.filter { $0.start != nil }
+        for (_, group) in grouped {
+            let sorted = group.sorted { Version.isLess($0.end, $1.end) }
+            for (i, range) in sorted.enumerated() {
+                var range = range
+                if i > 0 {
+                    let lower = sorted[i - 1].end.split(separator: ".")
+                    let parts = range.end.split(separator: ".")
+                    let differ = parts.indices.first { $0 >= lower.count || parts[$0] != lower[$0] }
+                    if let differ, differ < parts.count {
+                        range.start = parts[...differ].joined(separator: ".")
+                        range.startInclusive = true
+                    }
+                }
+                result.append(range)
+            }
+        }
+        return result
     }
 
     /// CNA "affected" entries: {version, lessThan|lessThanOrEqual} or free text like ">= 3.0, < 3.9".
