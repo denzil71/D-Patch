@@ -1,6 +1,7 @@
 # Builds and publishes a GitHub release when a version tag such as v1.2.3 is pushed.
 # The tag must match VERSION in build.sh. Release notes are the annotated tag's message (if any),
-# then GitHub's generated list of changes, then the install instructions (.github/release-footer.md).
+# then GitHub's generated list of changes, then the install instructions (.github/release-footer.md,
+# or release-footer-notarized.md once the Developer ID secrets are set).
 name: Release
 
 on:
@@ -31,12 +32,60 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Test
         run: ./test.sh
+      - name: Set up Developer ID signing
+        # Skipped (and the release is signed ad hoc) until the repository has these secrets:
+        # DEVELOPER_ID_P12 (the Developer ID Application certificate and key, .p12, base64),
+        # DEVELOPER_ID_P12_PASSWORD, and an App Store Connect API key for notarization:
+        # NOTARY_KEY_P8 (the .p8 file's contents), NOTARY_KEY_ID and NOTARY_ISSUER_ID.
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if [[ -z "$P12" ]]; then
+            echo "::warning::No DEVELOPER_ID_P12 secret: this release is signed ad hoc and not notarized."
+            exit 0
+          fi
+          if [[ -z "$NOTARY_KEY_P8" || -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ]]; then
+            echo "::error::DEVELOPER_ID_P12 is set but the NOTARY_KEY_P8, NOTARY_KEY_ID and NOTARY_ISSUER_ID secrets are not all set."
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/developer-id.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -nE 's/.*"(Developer ID Application: [^"]+)".*/\1/p' | head -1)
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity."
+            exit 1
+          fi
+          printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary-key.p8"
+          {
+            echo "SIGN_IDENTITY=$IDENTITY"
+            echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary-key.p8"
+            echo "NOTARY_KEY_ID=$NOTARY_KEY_ID"
+            echo "NOTARY_ISSUER_ID=$NOTARY_ISSUER_ID"
+            echo "NOTARIZED=1"
+          } >> "$GITHUB_ENV"
       - name: Build
         run: ./build.sh --dmg
       - name: Check the app
         run: |
           codesign -v build/D-Patch.app
           test "$(lipo -archs build/D-Patch.app/Contents/MacOS/DPatch)" = "arm64"
+          if [[ "${NOTARIZED:-}" == 1 ]]; then
+            spctl --assess --type execute -v build/D-Patch.app
+            xcrun stapler validate build/D-Patch.app
+            xcrun stapler validate "dist/D-Patch-$VERSION.dmg"
+          fi
       - name: Write release notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,7 +100,9 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" -q .body
             echo
             echo
-            sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{SHA256}}/$SHA/g" .github/release-footer.md
+            FOOTER=.github/release-footer.md
+            [[ "${NOTARIZED:-}" == 1 ]] && FOOTER=.github/release-footer-notarized.md
+            sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{SHA256}}/$SHA/g" "$FOOTER"
           } > release-notes.md
           cat release-notes.md
       - name: Publish the release
