@@ -29,7 +29,7 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
 - **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 
 ### Automatic scan
-**Settings › General** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`.
+**Settings › General** schedules a daily scan at a chosen time through a LaunchAgent (`~/Library/LaunchAgents/com.damonmatthews.dpatch.autoscan.plist`) that runs `D-Patch --scan --notify`. It runs even when the app is closed and can post a notification when it finishes. Output goes to `~/Library/Application Support/D-Patch/autoscan.log`. The schedule can only be set from a copy of the app that's been moved out of the disk image (e.g. into Applications): macOS runs a quarantined app opened from the disk image or Downloads from a temporary location, and kills scheduled launches of it.
 
 ### Updates
 D-Patch checks GitHub once a day for a newer release and, if there is one, shows a notice with a link to its release page (**View Release**, **Skip This Version** or **Later**). Nothing is downloaded or installed automatically. Turn it off in **Settings › General**, or check any time with **D-Patch › Check for Updates…**. Checks are skipped while demo data is loaded.
@@ -70,7 +70,15 @@ git clone https://github.com/denzil71/D-Patch.git
 cd D-Patch
 ./build.sh            # builds build/D-Patch.app for Apple silicon
 ./build.sh --install  # also copies it to /Applications
-./build.sh --dmg      # also packages dist/D-Patch-<version>.dmg (unsigned)
+./build.sh --dmg      # also packages dist/D-Patch-<version>.dmg
+```
+
+Builds are signed ad hoc unless `SIGN_IDENTITY` names a Developer ID, which also turns on the hardened runtime. With `--dmg`, the app and the DMG are then notarized and stapled if notarytool credentials are set, either a keychain profile or an App Store Connect API key:
+
+```bash
+xcrun notarytool store-credentials dpatch-notary   # once; asks for your Apple ID or API key
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=dpatch-notary ./build.sh --dmg
+# or: NOTARY_KEY_PATH=AuthKey_XXXX.p8 NOTARY_KEY_ID=XXXX NOTARY_ISSUER_ID=<uuid>
 ```
 
 The first build takes a minute or so, because it compiles for each architecture.
@@ -111,6 +119,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the format check, lint, tests a
    ```
 
 GitHub Actions (`.github/workflows/release.yml`) then checks the tag matches `VERSION` in `build.sh`, runs the tests, builds the DMG and publishes the release. Its notes are the tag's message, GitHub's list of merged pull requests, then the install instructions from `.github/release-footer.md` with the DMG's SHA-256. Only tags of the form `vX.Y.Z` trigger a release.
+
+Releases are signed ad hoc until the repository has these Actions secrets, then they're signed with the Developer ID, notarized and stapled, and the notes use `.github/release-footer-notarized.md` instead:
+
+- `DEVELOPER_ID_P12` — the Developer ID Application certificate with its private key, exported from Keychain Access as a .p12 and base64-encoded (`base64 -i cert.p12 | pbcopy`)
+- `DEVELOPER_ID_P12_PASSWORD` — the password set when exporting it
+- `NOTARY_KEY_P8`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` — an App Store Connect API key (Users and Access › Integrations › Team Keys, Developer access): the .p8 file's contents, its key ID and the issuer ID
 
 ### Running without the window
 

@@ -2,12 +2,18 @@
 # Builds D-Patch.app for Apple Silicon (arm64) into ./build.
 # Usage: ./build.sh [--install] [--dmg]
 #   --install  also copy it to /Applications
-#   --dmg      also package it as dist/D-Patch-<version>.dmg (unsigned)
+#   --dmg      also package it as dist/D-Patch-<version>.dmg
+#
+# Signing: ad hoc by default. Set SIGN_IDENTITY (e.g. "Developer ID Application: Name (TEAMID)")
+# to sign with a Developer ID and the hardened runtime. With --dmg, the app and the DMG are also
+# notarized and stapled when notarytool credentials are set: either NOTARY_PROFILE (a keychain
+# profile from `xcrun notarytool store-credentials`) or NOTARY_KEY_PATH, NOTARY_KEY_ID and
+# NOTARY_ISSUER_ID (an App Store Connect API key).
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="0.6.2"
-BUILD_NUMBER="12"
+VERSION="0.6.3"
+BUILD_NUMBER="13"
 MIN_MACOS="14.0"
 APP="build/D-Patch.app"
 
@@ -34,6 +40,41 @@ report_failure() {
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
         echo "::error::$1"
     fi
+}
+
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+NOTARY_ARGS=()
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+elif [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+    NOTARY_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "${NOTARY_KEY_ID:?NOTARY_KEY_ID is required with NOTARY_KEY_PATH}" \
+        --issuer "${NOTARY_ISSUER_ID:?NOTARY_ISSUER_ID is required with NOTARY_KEY_PATH}")
+fi
+if (( ${#NOTARY_ARGS[@]} )) && [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "Notarization needs a Developer ID: set SIGN_IDENTITY as well" >&2
+    exit 1
+fi
+
+# Submits a file to Apple's notary service, waits for the verdict and staples the ticket to $2
+# (the submitted file itself unless given). On rejection, prints Apple's log of the problems.
+notarize() {
+    local submit="$1" staple="${2:-$1}" result="$WORK/notary.plist" id status
+    echo "Notarizing $(basename "$staple")…"
+    xcrun notarytool submit "$submit" "${NOTARY_ARGS[@]}" --wait --output-format plist >"$result" || true
+    id=$(/usr/libexec/PlistBuddy -c 'Print :id' "$result" 2>/dev/null || true)
+    status=$(/usr/libexec/PlistBuddy -c 'Print :status' "$result" 2>/dev/null || true)
+    if [[ -z "$id" ]]; then
+        report_failure "could not submit $(basename "$staple") for notarization"
+        echo "Could not submit $(basename "$staple") for notarization" >&2
+        exit 1
+    fi
+    if [[ "$status" != "Accepted" ]]; then
+        xcrun notarytool log "$id" "${NOTARY_ARGS[@]}" >&2 || true
+        report_failure "notarization of $(basename "$staple") was rejected (submission $id)"
+        echo "Notarization of $(basename "$staple") was rejected (submission $id)" >&2
+        exit 1
+    fi
+    xcrun stapler staple "$staple"
 }
 
 source Scripts/select-sdk.sh
@@ -124,7 +165,19 @@ cat > "$SIGNED/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - "$SIGNED"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    codesign --force --sign - "$SIGNED"
+else
+    # The hardened runtime and a secure timestamp are required for notarization. The app needs no
+    # entitlements: osascript only posts notifications, Terminal is opened through Launch Services
+    # and JavaScriptCore runs without JIT.
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$SIGNED"
+    codesign --verify --strict --deep "$SIGNED"
+    if (( DMG )) && (( ${#NOTARY_ARGS[@]} )); then
+        ditto -c -k --keepParent "$SIGNED" "$WORK/D-Patch.zip"
+        notarize "$WORK/D-Patch.zip" "$SIGNED"
+    fi
+fi
 
 rm -rf "$APP"
 mkdir -p build
@@ -140,6 +193,13 @@ if (( DMG )); then
     mkdir -p dist
     hdiutil create -volname "D-Patch $VERSION" -srcfolder "$STAGE" -format UDZO -ov "$DMG_PATH" >/dev/null
     rm -rf "$STAGE"
+    if [[ "$SIGN_IDENTITY" != "-" ]]; then
+        codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+        if (( ${#NOTARY_ARGS[@]} )); then
+            notarize "$DMG_PATH"
+            spctl --assess --type open --context context:primary-signature -v "$DMG_PATH"
+        fi
+    fi
     echo "Built $DMG_PATH"
 fi
 
