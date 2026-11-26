@@ -6,15 +6,20 @@ enum DayFilter: Hashable {
     case day(Date)
 }
 
-/// Fix sources the list can be filtered by.
+/// Fix sources the list can be filtered by, and CVEs with no fix yet.
 enum FixKind: String, CaseIterable, Identifiable {
     case homebrew = "Homebrew"
     case appStore = "App Store"
     case apple = "Apple Software Update"
+    case none = "No fix yet"
 
     var id: String { rawValue }
 
-    init(_ method: FixMethod) {
+    init(_ fix: Fix?) {
+        guard let method = fix?.method else {
+            self = .none
+            return
+        }
         switch method {
         case .brewFormula, .brewCask, .brewCaskReplace: self = .homebrew
         case .appStore: self = .appStore
@@ -59,8 +64,7 @@ final class AppModel: ObservableObject {
 
     func load() {
         result = Storage.load(ScanResult.self, from: Storage.resultsURL)
-        let ids = Set(result?.findings.map(\.id) ?? [])
-        checked.formIntersection(ids)
+        checked.formIntersection(Set(fixable.map(\.id)))
     }
 
     func scan() {
@@ -73,7 +77,7 @@ final class AppModel: ObservableObject {
                 let r = try await Scanner.run { msg in Task { @MainActor in self.status = msg } }
                 await MainActor.run {
                     self.result = r
-                    self.checked.formIntersection(Set(r.findings.map(\.id)))
+                    self.checked.formIntersection(Set(self.fixable.map(\.id)))
                     self.status = ""
                     self.isScanning = false
                 }
@@ -88,6 +92,8 @@ final class AppModel: ObservableObject {
     }
 
     var findings: [Finding] { result?.findings ?? [] }
+    /// Findings with an update to install; only these can be ticked.
+    var fixable: [Finding] { findings.filter { $0.fix != nil } }
     /// macOS updates from the last scan, shown above the list whatever the CVEs.
     var macOSUpdates: [MacOSUpdate] { result?.macOSUpdates ?? [] }
 
@@ -116,13 +122,14 @@ final class AppModel: ObservableObject {
     var filtered: [Finding] {
         findings.filter { f in
             (severityFilter.isEmpty || severityFilter.contains(f.cve.severity))
-                && (fixFilter == nil || FixKind(f.fix.method) == fixFilter)
+                && (fixFilter == nil || FixKind(f.fix) == fixFilter)
                 && !(hideMajorUpgrades && f.isMajorUpgrade)
         }
     }
 
     var visible: [Finding] {
-        var list = filtered
+        // Sorted here too, so results saved by older versions get the same order.
+        var list = filtered.sorted(by: Finding.listOrder)
         if case .day(let d)? = filter {
             list = list.filter { Calendar.current.isDate($0.cve.published, inSameDayAs: d) }
         }
@@ -146,6 +153,7 @@ final class AppModel: ObservableObject {
     }
 
     func toggle(_ f: Finding) {
+        guard f.fix != nil else { return }
         if checked.contains(f.id) { checked.remove(f.id) } else { checked.insert(f.id) }
     }
 
@@ -153,9 +161,9 @@ final class AppModel: ObservableObject {
         if expanded.contains(f.id) { expanded.remove(f.id) } else { expanded.insert(f.id) }
     }
 
-    /// Ticks or unticks every finding currently shown.
+    /// Ticks or unticks every finding currently shown that has a fix.
     func setAllVisible(_ on: Bool) {
-        let ids = visible.map(\.id)
+        let ids = visible.filter { $0.fix != nil }.map(\.id)
         if on { checked.formUnion(ids) } else { checked.subtract(ids) }
     }
 }

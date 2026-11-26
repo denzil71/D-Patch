@@ -12,7 +12,7 @@ struct FindingList: View {
                     Label("No scan yet", systemImage: "shield.lefthalf.filled")
                 } description: {
                     Text(
-                        "D-Patch checks the software on this Mac against known CVEs, at the severity levels chosen in Settings, and lists the ones with an available fix."
+                        "D-Patch checks the software on this Mac against known CVEs, at the severity levels chosen in Settings, and lists the ones that affect it, with a fix where one is available."
                     )
                 } actions: {
                     Button("Scan Now") { model.scan() }.disabled(model.isScanning)
@@ -68,7 +68,7 @@ struct FindingList: View {
         } else {
             ContentUnavailableView(
                 "Nothing to patch", systemImage: "checkmark.shield",
-                description: Text("No fixable CVEs at the chosen severity levels affect this Mac."))
+                description: Text("No CVEs at the chosen severity levels affect this Mac."))
         }
     }
 
@@ -124,12 +124,17 @@ private struct ListHeader: View {
     var visible: [Finding]
 
     var body: some View {
-        let allOn = visible.allSatisfy { model.checked.contains($0.id) }
+        let fixable = visible.filter { $0.fix != nil }
+        let allOn = !fixable.isEmpty && fixable.allSatisfy { model.checked.contains($0.id) }
         HStack {
             Toggle(isOn: Binding(get: { allOn }, set: { model.setAllVisible($0) })) {
-                Text("\(visible.count) fixable CVE\(visible.count == 1 ? "" : "s")")
+                Text(
+                    "\(visible.count) CVE\(visible.count == 1 ? "" : "s"), \(fixable.count == visible.count ? "all" : "\(fixable.count)") fixable"
+                )
             }
             .toggleStyle(.checkbox)
+            .disabled(fixable.isEmpty)
+            .help("Tick every CVE shown that has a fix")
             Spacer()
             if !model.checked.isEmpty {
                 let hidden = model.hiddenCheckedCount
@@ -160,6 +165,8 @@ struct FindingRow: View {
                 )
                 .toggleStyle(.checkbox)
                 .labelsHidden()
+                .disabled(finding.fix == nil)
+                .help(finding.fix == nil ? "No update fixes this yet" : "")
                 Button {
                     withAnimation(.easeInOut(duration: 0.22)) { model.toggleExpanded(finding) }
                 } label: {
@@ -176,9 +183,15 @@ struct FindingRow: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        Text("→ \(FixResolver.plain(finding.fix.toVersion))")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.green)
+                        if let fix = finding.fix {
+                            Text("→ \(FixResolver.plain(fix.toVersion))")
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.green)
+                        } else {
+                            Text("No fix yet")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .contentShape(Rectangle())
                 }
@@ -202,7 +215,7 @@ struct SeverityTag: View {
     var score: Double
 
     var body: some View {
-        Text("\(severity.rawValue) \(score, specifier: "%.1f")")
+        Text(severity == .unscored ? severity.rawValue : "\(severity.rawValue) \(String(format: "%.1f", score))")
             .font(.caption.weight(.bold).monospacedDigit())
             .foregroundStyle(severity.color)
             .padding(.horizontal, 6)
@@ -217,14 +230,17 @@ struct FindingDetail: View {
 
     var body: some View {
         let cve = finding.cve
-        let command = ScriptGenerator.command(for: finding.fix)
         VStack(alignment: .leading, spacing: 14) {
             DetailSection(title: "Overview", systemImage: "info.circle") {
                 Text(cve.summary.isEmpty ? "No description published." : cve.summary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
-                    row("Severity", "\(cve.severity.rawValue.capitalized) — CVSS \(String(format: "%.1f", cve.score))")
+                    row(
+                        "Severity",
+                        cve.severity == .unscored
+                            ? "Not scored yet by NVD, CISA or the vendor"
+                            : "\(cve.severity.rawValue.capitalized) — CVSS \(String(format: "%.1f", cve.score))")
                     if !cve.vector.isEmpty { row("Vector", cve.vector) }
                     row("Published", cve.published.formatted(date: .long, time: .shortened))
                     row(
@@ -236,33 +252,15 @@ struct FindingDetail: View {
             }
 
             DetailSection(title: "How to fix", systemImage: "wrench.and.screwdriver") {
-                Text(finding.fix.summary).fontWeight(.medium)
-                if let notes = finding.fix.notesLink {
-                    Link(notes.title, destination: notes.url)
+                if let fix = finding.fix {
+                    fixDetail(fix)
+                } else {
+                    Text("No update fixes this yet").fontWeight(.medium)
+                    Text(noFixNote)
                         .font(.callout)
-                        .help(notes.url.absoluteString)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(alignment: .top, spacing: 8) {
-                    Text(command)
-                        .font(.system(.callout, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Copy command")
-                }
-                .padding(8)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(.separator))
-                Text(LocalizedStringKey(note))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             DetailSection(title: "Databases", systemImage: "square.stack.3d.up") {
@@ -287,17 +285,70 @@ struct FindingDetail: View {
         }
     }
 
-    private var note: String {
-        switch finding.fix.method {
+    @ViewBuilder private func fixDetail(_ fix: Fix) -> some View {
+        let command = ScriptGenerator.command(for: fix)
+        Text(fix.summary).fontWeight(.medium)
+        if let notes = fix.notesLink {
+            Link(notes.title, destination: notes.url)
+                .font(.callout)
+                .help(notes.url.absoluteString)
+        }
+        HStack(alignment: .top, spacing: 8) {
+            Text(command)
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy command")
+        }
+        .padding(8)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(.separator))
+        Text(LocalizedStringKey(note(fix)))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Why there's nothing to install, and what is known about a fix.
+    private var noFixNote: String {
+        let source: String
+        switch finding.item.kind {
+        case .formula, .cask: source = "Homebrew doesn't offer a version"
+        case .macos: source = "Apple Software Update doesn't offer a version"
+        case .app:
+            source =
+                finding.item.caskToken != nil
+                ? "Homebrew doesn't offer a version"
+                : finding.item.isAppStore
+                    ? "The Mac App Store doesn't offer a version"
+                    : "Neither Homebrew nor the Mac App Store offers a version"
+        }
+        let fixed =
+            finding.fixedIn.hasPrefix("not stated")
+            ? "The vendor hasn't said which version fixes it."
+            : "Fixed in: \(finding.fixedIn)."
+        return
+            "\(source) outside the affected range yet. \(fixed) Check the references for a workaround or a vendor download, and scan again later."
+    }
+
+    private func note(_ fix: Fix) -> String {
+        switch fix.method {
         case .brewFormula:
             return
-                "Upgrades the Homebrew formula to \(finding.fix.toVersion). Run `brew update` first so Homebrew knows about the latest version."
+                "Upgrades the Homebrew formula to \(fix.toVersion). Run `brew update` first so Homebrew knows about the latest version."
         case .brewCask:
             return
-                "Upgrades the Homebrew-managed app to \(FixResolver.plain(finding.fix.toVersion)). Quit the app first."
+                "Upgrades the Homebrew-managed app to \(FixResolver.plain(fix.toVersion)). Quit the app first."
         case .brewCaskReplace:
             return
-                "This app was installed outside Homebrew. The command installs the Homebrew cask (\(FixResolver.plain(finding.fix.toVersion))) over it, after which Homebrew manages its updates. Quit the app first."
+                "This app was installed outside Homebrew. The command installs the Homebrew cask (\(FixResolver.plain(fix.toVersion))) over it, after which Homebrew manages its updates. Quit the app first."
         case .appStore:
             return
                 "Updates the app from the Mac App Store using the `mas` tool (`brew install mas`); you must be signed in to the App Store. You can also update it in App Store › Updates."
@@ -399,6 +450,7 @@ extension Severity {
         case .high: return .orange
         case .medium: return .yellow
         case .low: return .gray
+        case .unscored: return .purple
         }
     }
 }

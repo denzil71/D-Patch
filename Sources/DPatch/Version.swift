@@ -76,6 +76,17 @@ struct Version: Comparable, CustomStringConvertible {
         }
     }
 
+    /// Versioned by year: "2026.3.15", "2025".
+    static func isCalendar(_ s: String) -> Bool {
+        guard case .num(let n)? = Version(s)?.parts.first else { return false }
+        return (1990...2100).contains(n)
+    }
+
+    /// A git commit ("9432ad1c40…") that would otherwise parse as a version starting with 9432.
+    static func looksLikeCommit(_ s: String) -> Bool {
+        s.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil && s.contains(where: \.isLetter)
+    }
+
     /// First version-looking token in free text, e.g. "1.18.0 or later" -> "1.18.0".
     static func firstToken(in text: String) -> String? {
         guard let r = text.range(of: #"\d[0-9A-Za-z.\-_]*"#, options: .regularExpression) else { return nil }

@@ -15,9 +15,16 @@ final class FixResolver {
 
     private var softwareUpdates: [SoftwareUpdate]?
     private var caskByApp: [String: CaskEntry]?
+    private var caskByToken: [String: String]?
+    private var formulaLatest: [String: String?] = [:]
+    private var reportedAPIFailure = false
     private var appStore: [String: (id: Int, version: String)?] = [:]
     private var noteTitles: [String: String]?
+    /// False for demo data, which must not depend on the network.
+    private let online: Bool
     var warnings: [String] = []
+
+    init(online: Bool = true) { self.online = online }
 
     func fix(for item: InventoryItem, ranges: [ProductRange], references: [String] = []) async -> Fix? {
         guard let installed = Version(item.version) else { return nil }
@@ -28,14 +35,15 @@ final class FixResolver {
             return c
         }
 
+        let latest = await latestVersion(of: item)
         switch item.kind {
         case .formula:
-            guard let to = fixes(item.latestVersion) else { return nil }
+            guard let to = fixes(latest) else { return nil }
             return Fix(
                 method: .brewFormula, target: item.name, toVersion: to,
                 summary: "Homebrew: upgrade formula \(item.name) \(item.version) → \(to)")
         case .cask:
-            guard let token = item.caskToken, let to = fixes(item.latestVersion) else { return nil }
+            guard let token = item.caskToken, let to = fixes(latest) else { return nil }
             return Fix(
                 method: .brewCask, target: token, toVersion: to,
                 summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
@@ -43,7 +51,7 @@ final class FixResolver {
             return await softwareUpdateFix(item, references: references, matching: { $0.hasPrefix("macOS") }, fixes)
         case .app:
             if let token = item.caskToken {
-                guard let to = fixes(item.latestVersion) else { return nil }
+                guard let to = fixes(latest) else { return nil }
                 return Fix(
                     method: .brewCask, target: token, toVersion: to,
                     summary: "Homebrew: upgrade cask \(token) \(item.version) → \(Self.plain(to))")
@@ -69,6 +77,58 @@ final class FixResolver {
                 summary:
                     "Homebrew: install cask \(cask.token) over the existing app, \(item.version) → \(Self.plain(to))")
         }
+    }
+
+    /// The newest version Homebrew offers. `brew info` reads Homebrew's local copy of its formula and
+    /// cask lists, which is only as fresh as the last `brew update`, so the online lists are asked
+    /// too and the newer of the two wins. The patch script runs `brew update` before upgrading.
+    private func latestVersion(of item: InventoryItem) async -> String? {
+        guard self.online else { return item.latestVersion }
+        var online: String?
+        if item.kind == .formula {
+            online = await formulaVersion(item.name)
+        } else if let token = item.caskToken {
+            _ = await caskCatalog()
+            online = caskByToken?[token]
+        }
+        return Self.newer(item.latestVersion, online)
+    }
+
+    /// The newer of two versions, either of which may be missing or unparseable.
+    static func newer(_ a: String?, _ b: String?) -> String? {
+        guard let a, Version(a) != nil else { return b }
+        guard let b, Version(b) != nil else { return a }
+        return Version.isLess(a, b) ? b : a
+    }
+
+    /// A core formula's stable version from formulae.brew.sh, once per scan.
+    private func formulaVersion(_ name: String) async -> String? {
+        // Formulae from other taps ("user/tap/name") aren't in Homebrew's API.
+        guard !name.contains("/") else { return nil }
+        if let cached = formulaLatest[name] { return cached }
+        struct Formula: Decodable {
+            struct Versions: Decodable { var stable: String? }
+            var versions: Versions
+        }
+        var result: String?
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        if let url = URL(string: "https://formulae.brew.sh/api/formula/\(encoded).json") {
+            do {
+                let (data, resp) = try await URLSession.shared.data(from: url)
+                if (resp as? HTTPURLResponse)?.statusCode == 200 {
+                    result = try JSONDecoder().decode(Formula.self, from: data).versions.stable
+                }
+            } catch {
+                if !reportedAPIFailure {
+                    reportedAPIFailure = true
+                    warnings.append(
+                        "Could not ask Homebrew for its latest versions (\(error.localizedDescription)); used this Mac's copy, last updated by `brew update`."
+                    )
+                }
+            }
+        }
+        formulaLatest[name] = result
+        return result
     }
 
     /// Every macOS update softwareupdate offers, smallest first, whether or not it fixes a CVE.
@@ -253,14 +313,17 @@ final class FixResolver {
             }
         }
         var map: [String: CaskEntry] = [:]
+        var tokens: [String: String] = [:]
         if let data = try? Data(contentsOf: url), let casks = try? JSONDecoder().decode([Cask].self, from: data) {
             for c in casks where c.version != "latest" {
+                tokens[c.token] = c.version
                 for app in c.artifacts.flatMap({ $0.app ?? [] }) where map[app] == nil {
                     map[app] = CaskEntry(token: c.token, version: c.version)
                 }
             }
         }
         caskByApp = map
+        caskByToken = tokens
         return map
     }
 }

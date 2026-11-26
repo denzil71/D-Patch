@@ -1,12 +1,12 @@
 # D-Patch
 
-A macOS app that checks the software on this Mac against CVEs from the NVD (National Vulnerability Database) and lists the ones that have an installable fix. Tick the CVEs you want to patch and click **Patch Selected** to install the updates.
+A macOS app that checks the software on this Mac against CVEs from the NVD (National Vulnerability Database) and lists the ones that affect it, with the update that fixes each one where there is one. Tick the CVEs you want to patch and click **Patch Selected** to install the updates.
 
 ## Features
 
 ### Scanning
 - **Inventory** — Homebrew formulae and casks, apps in `/Applications`, `/Applications/Utilities` and `~/Applications` (including Mac App Store apps), and macOS itself.
-- **CVE source** — the NVD 2.0 API: every CVE published in the last 30–365 days (90 by default, set in **Settings › CVE Databases**), shown at the CVSS severity levels ticked in **Settings › General** (Critical and High by default; Medium and Low optional). The score is NVD's own when it has analysed the CVE, otherwise CISA's or the vendor's. That matters: NVD's analysis backlog means most new CVEs — including Apple's fixes on the day they ship — have only those scores for weeks, and D-Patch before 0.6.1 missed them. Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json` (tens of MB for 90 days), so later scans fetch only what is new or changed, and changing the levels needs no new download.
+- **CVE source** — the NVD 2.0 API: every CVE published in the last 30–365 days (90 by default, set in **Settings › CVE Databases**), shown at the CVSS severity levels ticked in **Settings › General** (Critical and High by default; Medium and Low optional). The score is NVD's own when it has analysed the CVE, otherwise CISA's or the vendor's. That matters: NVD's analysis backlog means most new CVEs — including Apple's fixes on the day they ship — have only those scores for weeks, and D-Patch before 0.6.1 missed them. CVEs no one has scored yet are listed as **Unscored**, whatever levels are ticked. Downloads are cached in `~/Library/Application Support/D-Patch/nvd-cache.json` (tens of MB for 90 days), so later scans fetch only what is new or changed, and changing the levels needs no new download.
 - **Release lines** — vendors often list one fix per release line, all "affected below" (macOS below 15.8.3, below 26.7.3, below 27.2.1). D-Patch reads each as covering only its own line, so an up-to-date older line isn't flagged as needing the newest release.
 - **More databases** — each CVE found is also looked up in the databases ticked in **Settings › CVE Databases**, and the list shows which ones it appears in:
   - **CISA Known Exploited Vulnerabilities (KEV)** — on by default. Marks CVEs that are being exploited in the wild (with whether they're used by ransomware). D-Patch downloads CISA's public list (refreshed every 12 hours), so nothing about the Mac is sent.
@@ -14,18 +14,23 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
   - **ENISA EU Vulnerability Database (EUVD)** — optional. The EU's database, with its EUVD ID.
 
   OSV.dev and EUVD are sent the IDs of the CVEs found on the Mac (nothing else), and their answers are kept for a day in `sources-cache.json`. NVD is always used, because it supplies the affected versions that matching relies on.
-- **Matching** — CVE product names (from NVD CPE configurations and the CNA's affected-product data) are matched to installed items, and the installed version must fall inside an affected range.
-- **Fixes only** — a CVE is listed only if an update exists that moves the item past the fixed version:
-  - Homebrew formula or cask → `brew upgrade`
+- **Matching** — CVE product names (from NVD CPE configurations and the CNA's affected-product data) are matched to installed items, and the installed version must fall inside an affected range or be one of the versions a vendor lists as affected. To avoid false matches:
+  - An app's CVE must come from its own vendor (from its bundle ID, or a vendor named like the app), so 1Password for Safari isn't matched against Apple's Safari, and a plugin named "whatsapp" isn't WhatsApp. Other platforms' editions (VLC for Android) are skipped.
+  - When a CVE lists several vendors' versions of a formula, the vendor named in Homebrew's homepage wins (Google's brotli, not a Go port).
+  - Products versioned by year (2026.3.15) aren't compared with a version like 12.4, and git commits aren't read as versions.
+- **Fixes** — for each CVE, D-Patch looks for an update that moves the item out of every affected range:
+  - Homebrew formula or cask → `brew upgrade` (the latest versions come from Homebrew's online lists, so a stale local `brew update` doesn't hide a fix)
   - App installed outside Homebrew that has a cask → `brew install --cask --force`
   - Mac App Store app → `mas upgrade`
   - macOS, Safari and other Apple software → `softwareupdate --install`
 
+  CVEs without such an update are still listed, marked **No fix yet**, with the fixed version where the vendor names one. They can't be ticked; scan again later.
+
 ### Window
 - **macOS updates** — when Apple Software Update offers a macOS update, it's shown at the top of the list, even when no CVE needs it or the list is empty, with **Open Software Update** to install it. A new major version is marked **Major upgrade**.
-- **Left** — dates on which CVEs were published, each with a count of CVEs per severity: critical (red), high (orange), medium (yellow) and low (grey). **All dates** shows everything.
-- **Right** — the CVEs for the selected date. Each shows badges for the databases it appears in (**NVD**, **KEV** in red, **OSV**, **EUVD**). Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector, the **Databases** listing it (with links, GitHub Advisory and EUVD IDs, and CISA's note for exploited CVEs) and references. Search by CVE ID, app or keyword.
-- **Filters** — above the list: severity chips (click one to hide or show that level), a **Fix** menu (Homebrew, App Store or Apple Software Update) and **Hide major macOS upgrades** (CVEs whose only fix is a new major macOS version). The date counts follow the filters. Ticked CVEs that a filter hides stay ticked and are still patched; the list header says how many are not shown.
+- **Left** — dates on which CVEs were published, each with a count of CVEs per severity: critical (red), high (orange), medium (yellow), low (grey) and unscored (purple). **All dates** shows everything.
+- **Right** — the CVEs for the selected date: those with a fix first, from critical to low, then those with no fix yet, in the same order. Each shows badges for the databases it appears in (**NVD**, **KEV** in red, **OSV**, **EUVD**). Expand one to see its description, the installed version, the fixed version, the fix, its CVSS vector, the **Databases** listing it (with links, GitHub Advisory and EUVD IDs, and CISA's note for exploited CVEs) and references. Search by CVE ID, app or keyword.
+- **Filters** — above the list: severity chips (click one to hide or show that level), a **Fix** menu (Homebrew, App Store, Apple Software Update or No fix yet) and **Hide major macOS upgrades** (CVEs whose only fix is a new major macOS version). The date counts follow the filters. Ticked CVEs that a filter hides stay ticked and are still patched; the list header says how many are not shown.
 - **Patch Selected** — lists the updates that will close the ticked CVEs (one update can close several), with any warnings (apps to quit, administrator password, restart, major macOS upgrade). **Patch Now** runs them in your terminal app, so you can follow the output and answer password prompts; when it finishes, D-Patch rescans and the list updates by itself. **Save Script…** saves the same steps as a bash script to run later (it asks before changing anything; `-y` skips the prompt). Run scripts are kept in `~/Library/Application Support/D-Patch/runs`.
 
 ### Automatic scan

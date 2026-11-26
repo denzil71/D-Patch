@@ -38,7 +38,7 @@ enum Inventory {
                         InventoryItem(
                             kind: .formula, name: f.name, version: installed,
                             aliases: [n] + (formulaAliases[n] ?? []),
-                            latestVersion: f.versions.stable))
+                            latestVersion: f.versions.stable, homepage: f.homepage))
                 }
                 for c in info.casks {
                     guard let installed = c.installed else { continue }
@@ -48,7 +48,7 @@ enum Inventory {
                             InventoryItem(
                                 kind: .cask, name: c.token, version: installed,
                                 aliases: [normalizeName(c.token)],
-                                caskToken: c.token, latestVersion: c.version))
+                                caskToken: c.token, latestVersion: c.version, homepage: c.homepage))
                     }
                     for a in apps { caskApps[a] = (c.token, c.version) }
                 }
@@ -121,6 +121,7 @@ private struct BrewInfo: Decodable {
         struct Versions: Decodable { var stable: String? }
         struct Installed: Decodable { var version: String }
         var name: String
+        var homepage: String?
         var versions: Versions
         var installed: [Installed]
     }
@@ -135,6 +136,7 @@ private struct BrewInfo: Decodable {
             enum Key: String, CodingKey { case app }
         }
         var token: String
+        var homepage: String?
         var version: String
         var installed: String?
         var artifacts: [Artifact]

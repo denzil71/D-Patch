@@ -113,8 +113,9 @@ enum ScriptGenerator {
     /// One action per fix target, even when it closes several CVEs, in the order the script runs them.
     static func fixes(for findings: [Finding]) -> [Fix] {
         var fixes: [Fix] = []
-        for f in findings where !fixes.contains(where: { $0.method == f.fix.method && $0.target == f.fix.target }) {
-            fixes.append(f.fix)
+        for fix in findings.compactMap(\.fix)
+        where !fixes.contains(where: { $0.method == fix.method && $0.target == fix.target }) {
+            fixes.append(fix)
         }
         // A newer macOS update includes the fixes of an older one; install only the newest.
         let macOS = fixes.filter { $0.method == .softwareUpdate && $0.target.hasPrefix("macOS") }
@@ -132,7 +133,7 @@ enum ScriptGenerator {
     static func steps(for findings: [Finding], rescan: Bool) -> [String] {
         let fixes = self.fixes(for: findings)
         func name(_ fix: Fix) -> String {
-            findings.first { $0.fix.method == fix.method && $0.fix.target == fix.target }?.item.name ?? fix.target
+            findings.first { $0.fix?.method == fix.method && $0.fix?.target == fix.target }?.item.name ?? fix.target
         }
         var steps: [String] = []
         if fixes.contains(where: { $0.method != .softwareUpdate }) {

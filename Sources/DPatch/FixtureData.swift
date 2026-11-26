@@ -30,17 +30,13 @@ enum FixtureData {
 
         progress("Demo data: matching \(cves.count) CVEs against \(items.count) installed items…")
         let matcher = Matcher(cves: cves)
-        let resolver = FixResolver()
+        let resolver = FixResolver(online: false)
         var findings: [Finding] = []
         for item in items {
             let hits = matcher.hits(for: item)
             guard !hits.isEmpty else { continue }
             guard let installed = Version(item.version) else { continue }
             for hit in hits {
-                guard
-                    let range = hit.ranges.filter({ $0.contains(installed) })
-                        .min(by: { Version.isLess($0.end, $1.end) })
-                else { continue }
                 let id = "\(hit.cve.id)|\(item.key)"
                 let fix: Fix?
                 if let explicit = explicitFixes[id] {
@@ -48,11 +44,10 @@ enum FixtureData {
                 } else {
                     fix = await resolver.fix(for: item, ranges: hit.ranges, references: hit.cve.references)
                 }
-                guard let fix else { continue }
-                findings.append(Finding(cve: hit.cve, item: item, fixedIn: range.fixedInDescription, fix: fix))
+                if let f = Scanner.finding(hit, item: item, installed: installed, fix: fix) { findings.append(f) }
             }
         }
-        findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
+        findings.sort(by: Finding.listOrder)
 
         // Other databases' records come from sources.json, keyed by CVE ID, so demo scans stay offline.
         let sources =
@@ -63,7 +58,7 @@ enum FixtureData {
         }
 
         return ScanResult(
-            scannedAt: Date(), lookbackDays: 90, severities: Severity.allCases, cvesChecked: cves.count,
+            scannedAt: Date(), lookbackDays: 90, severities: Severity.scored, cvesChecked: cves.count,
             itemsChecked: items.count, findings: findings,
             warnings: ["Demo data from \(directory.path); Patch Now is disabled."] + resolver.warnings,
             macOSUpdates: try? load([MacOSUpdate].self, from: directory.appendingPathComponent("macos-updates.json")))

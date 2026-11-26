@@ -1,13 +1,16 @@
 import Foundation
 
-/// CVSS v3 severity, lowest first.
+/// CVSS v3 severity, lowest first. `unscored` is a CVE no one (NVD, CISA or the vendor) has scored yet.
 enum Severity: String, Codable, Comparable, CaseIterable {
+    case unscored = "UNSCORED"
     case low = "LOW"
     case medium = "MEDIUM"
     case high = "HIGH"
     case critical = "CRITICAL"
 
     static let defaults: [Severity] = [.critical, .high]
+    /// The levels that can be chosen in Settings; unscored CVEs are always included.
+    static let scored: [Severity] = [.low, .medium, .high, .critical]
 
     static func < (a: Severity, b: Severity) -> Bool {
         allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
@@ -17,7 +20,7 @@ enum Severity: String, Codable, Comparable, CaseIterable {
 }
 
 /// One affected-version range for a product, as published by NVD (CPE) or the CNA.
-/// Only ranges with an upper bound are kept: without one there is no known fixed version.
+/// Only ranges with an upper bound are kept; a single listed version is a range from and to itself.
 struct ProductRange: Codable, Hashable {
     /// From NVD's analysed CPE data (true) or the CNA's affected list (false).
     var nvd: Bool
@@ -36,7 +39,18 @@ struct ProductRange: Codable, Hashable {
         return endInclusive ? v <= ev : v < ev
     }
 
+    /// One listed version ("affects 6.0.3") rather than a range.
+    var isExact: Bool { start == end && startInclusive && endInclusive }
+
     var fixedInDescription: String { endInclusive ? "after \(end)" : end }
+
+    /// "Fixed in" for the range that contains the installed version. Vendors that list affected
+    /// versions one by one don't name a fixed one, so say which is the newest they list.
+    static func fixedInDescription(_ range: ProductRange, among ranges: [ProductRange]) -> String {
+        guard range.isExact else { return range.fixedInDescription }
+        let newest = ranges.filter(\.isExact).map(\.end).max(by: Version.isLess) ?? range.end
+        return "not stated (affected versions listed up to \(newest))"
+    }
 }
 
 /// Compact form of an NVD CVE record, kept in the local cache.
@@ -70,6 +84,8 @@ struct InventoryItem: Codable, Hashable {
     /// Newest version Homebrew offers, for formulae and brew-managed casks.
     var latestVersion: String?
     var isAppStore: Bool = false
+    /// Homebrew's homepage for a formula or cask, which names its vendor ("github.com/google/brotli").
+    var homepage: String?
 
     var key: String { "\(kind.rawValue):\(caskToken ?? bundleID ?? name)" }
 }
@@ -102,7 +118,8 @@ struct Finding: Codable, Identifiable {
     var cve: CVERecord
     var item: InventoryItem
     var fixedIn: String
-    var fix: Fix
+    /// nil when no update that fixes it is available yet from Homebrew, the App Store or Apple.
+    var fix: Fix?
     /// The databases this CVE appears in; nil for scans made before D-Patch recorded them (NVD only).
     var sources: [SourceRecord]?
 
@@ -111,12 +128,22 @@ struct Finding: Codable, Identifiable {
     /// Databases listing this CVE, NVD first.
     var databases: [SourceRecord] { (sources ?? [SourceChecker.nvdRecord(cve.id)]).sorted { $0.source < $1.source } }
 
+    /// List order: fixable CVEs first, then those with no fix yet; each by severity (critical
+    /// first, unscored last), then CVSS score, then newest.
+    static func listOrder(_ a: Finding, _ b: Finding) -> Bool {
+        if (a.fix != nil) != (b.fix != nil) { return a.fix != nil }
+        if a.cve.severity != b.cve.severity { return a.cve.severity > b.cve.severity }
+        if a.cve.score != b.cve.score { return a.cve.score > b.cve.score }
+        if a.cve.published != b.cve.published { return a.cve.published > b.cve.published }
+        return a.id < b.id
+    }
+
     /// CISA lists it as exploited in the wild.
     var isKnownExploited: Bool { sources?.contains { $0.source == .kev } ?? false }
 
     /// The only fix is a new major macOS version (26.x -> 27).
     var isMajorUpgrade: Bool {
-        guard item.kind == .macos, fix.method == .softwareUpdate else { return false }
+        guard item.kind == .macos, let fix, fix.method == .softwareUpdate else { return false }
         let major = { (v: String) in v.split(separator: ".").first.map(String.init) }
         return major(fix.toVersion) != major(item.version)
     }
