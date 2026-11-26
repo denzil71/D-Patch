@@ -66,7 +66,7 @@ private struct GeneralSettings: View {
             }
 
             Section("Severity") {
-                ForEach(Severity.allCases.reversed(), id: \.self) { level in
+                ForEach(Severity.scored.reversed(), id: \.self) { level in
                     Toggle(isOn: severityBinding(level)) {
                         HStack(spacing: 6) {
                             Circle().fill(level.color).frame(width: 8, height: 8)
@@ -77,7 +77,7 @@ private struct GeneralSettings: View {
                     .disabled(selectedSeverities == [level])
                 }
                 Text(
-                    "Scans list CVEs at the ticked levels. Every level is downloaded either way, so changing them applies from the next scan without downloading again."
+                    "Scans list CVEs at the ticked levels, and always CVEs that no one has scored yet. Every level is downloaded either way, so changing them applies from the next scan without downloading again."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

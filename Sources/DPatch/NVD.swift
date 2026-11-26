@@ -15,7 +15,7 @@ struct NVDClient {
     static let maxRangeDays = 120  // NVD limit for one date range
     static let pageSize = 2000  // NVD maximum
     /// Bump when the cache's contents change meaning, so older caches are rebuilt.
-    static let cacheFormat = 2
+    static let cacheFormat = 3
     private static var lastRequest = Date.distantPast
 
     struct Cache: Codable {
@@ -65,9 +65,9 @@ struct NVDClient {
         return Self.select(Array(cache.records.values), severities: severities)
     }
 
-    /// The records at the chosen levels.
+    /// The records at the chosen levels, plus every unscored one: there's no level to judge it by yet.
     static func select(_ records: [CVERecord], severities: [Severity]) -> [CVERecord] {
-        let wanted = Set(severities)
+        let wanted = Set(severities + [.unscored])
         return records.filter { wanted.contains($0.severity) }
     }
 
@@ -230,6 +230,7 @@ struct NVDCVE: Decodable {
                 var lessThan: String?
                 var lessThanOrEqual: String?
                 var status: String?
+                var versionType: String?
             }
             var vendor: String?
             var product: String?
@@ -255,12 +256,12 @@ extension CVERecord {
         guard c.vulnStatus != "Rejected",
             let published = NVDClient.nvdDateFormatter.date(from: c.published)
         else { return nil }
-        // Prefer NVD's own (Primary) score, then the CNA's, newest CVSS version first.
+        // Prefer NVD's own (Primary) score, then the CNA's, newest CVSS version first. A CVE no one
+        // has scored yet is kept as unscored: it can still name versions that are installed here.
         let metrics = [c.metrics?.cvssMetricV31, c.metrics?.cvssMetricV40, c.metrics?.cvssMetricV30].compactMap { $0 }
-            .flatMap { $0 }
-        guard let m = metrics.first(where: { $0.type == "Primary" }) ?? metrics.first,
-            let sev = m.cvssData.baseSeverity.flatMap(Severity.init(rawValue:))
-        else { return nil }
+            .flatMap { $0 }.filter { $0.cvssData.baseSeverity.flatMap(Severity.init(rawValue:)) != nil }
+        let m = metrics.first(where: { $0.type == "Primary" }) ?? metrics.first
+        let sev = m?.cvssData.baseSeverity.flatMap(Severity.init(rawValue:)) ?? .unscored
 
         var ranges = Set<ProductRange>()
         for node in (c.configurations ?? []).flatMap(\.nodes) {
@@ -281,20 +282,30 @@ extension CVERecord {
         self.init(
             id: c.id, published: published,
             lastModified: NVDClient.nvdDateFormatter.date(from: c.lastModified) ?? published,
-            severity: sev, score: m.cvssData.baseScore, vector: m.cvssData.vectorString ?? "",
+            severity: sev, score: m?.cvssData.baseScore ?? 0, vector: m?.cvssData.vectorString ?? "",
             summary: c.descriptions?.first(where: { $0.lang == "en" })?.value ?? "",
             references: Array((c.references ?? []).map(\.url).prefix(8)),
             ranges: Array(ranges))
     }
 
-    /// cpe:2.3:part:vendor:product:version:... with optional version bounds.
+    /// cpe:2.3:part:vendor:product:version:update:... with optional version bounds, or naming one
+    /// version ("assimp:6.0.3") when there are none.
     static func range(cpe m: NVDCVE.CPEMatch) -> ProductRange? {
         let f = m.criteria.split(separator: ":", omittingEmptySubsequences: false).map {
             $0.replacingOccurrences(of: "\\", with: "")
         }
         guard f.count > 5 else { return nil }
+        let any: Set<String> = ["*", "-", ""]
         let end = m.versionEndExcluding ?? m.versionEndIncluding
-        guard let end, Version(end) != nil else { return nil }
+        guard let end, Version(end) != nil, !Version.looksLikeCommit(end) else {
+            // One version, and no update qualifier ("9.8:p1") the installed version couldn't be told apart by.
+            guard m.versionStartIncluding == nil, m.versionStartExcluding == nil, !any.contains(f[5]),
+                Version(f[5]) != nil, f.count < 7 || any.contains(f[6])
+            else { return nil }
+            return ProductRange(
+                nvd: true, vendor: f[3], product: f[4], start: f[5], startInclusive: true, end: f[5], endInclusive: true
+            )
+        }
         return ProductRange(
             nvd: true, vendor: f[3], product: f[4],
             start: m.versionStartIncluding ?? m.versionStartExcluding,
@@ -337,6 +348,8 @@ extension CVERecord {
             guard let s, !openStarts.contains(s.lowercased()), Version(s) != nil else { return nil }
             return s
         }
+        // Commits can't be compared with an installed version.
+        guard v.versionType != "git" else { return nil }
         var r: ProductRange?
         if let lt = v.lessThan ?? v.lessThanOrEqual, let end = Version.firstToken(in: lt) {
             r = ProductRange(
@@ -361,9 +374,15 @@ extension CVERecord {
                 r = ProductRange(
                     nvd: false, vendor: vendor, product: product, start: sides[0], startInclusive: true,
                     end: sides[1], endInclusive: true)
+            } else if let exact = start(text), !text.contains(" "), !text.contains("*"), !Version.looksLikeCommit(text)
+            {
+                // One listed version ("6.0.3"); commit hashes and wildcards can't be compared.
+                return ProductRange(
+                    nvd: false, vendor: vendor, product: product, start: exact, startInclusive: true,
+                    end: exact, endInclusive: true)
             }
         }
-        guard var range = r, let ev = Version(range.end) else { return nil }
+        guard var range = r, let ev = Version(range.end), !Version.looksLikeCommit(range.end) else { return nil }
         // Some CNAs repeat the fixed version as the start ("155.0" lessThan "155.0"); treat it as open.
         if let s = range.start, let sv = Version(s), sv >= ev { range.start = nil }
         return range

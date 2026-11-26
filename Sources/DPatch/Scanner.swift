@@ -35,16 +35,11 @@ enum Scanner {
         var findings: [Finding] = []
         for item in items {
             let hits = matcher.hits(for: item)
-            guard !hits.isEmpty else { continue }
+            guard !hits.isEmpty, let installed = Version(item.version) else { continue }
             progress("Looking for fixes for \(item.name)…")
             for hit in hits {
-                let installed = Version(item.version)!
-                guard
-                    let range = hit.ranges.filter({ $0.contains(installed) })
-                        .min(by: { Version.isLess($0.end, $1.end) }),
-                    let fix = await resolver.fix(for: item, ranges: hit.ranges, references: hit.cve.references)
-                else { continue }
-                findings.append(Finding(cve: hit.cve, item: item, fixedIn: range.fixedInDescription, fix: fix))
+                let fix = await resolver.fix(for: item, ranges: hit.ranges, references: hit.cve.references)
+                if let f = finding(hit, item: item, installed: installed, fix: fix) { findings.append(f) }
             }
         }
         findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
@@ -63,6 +58,25 @@ enum Scanner {
             warnings: warnings + resolver.warnings + checker.warnings, macOSUpdates: macOSUpdates)
     }
 
+    /// A CVE that affects the installed version, listed whether or not an update fixes it yet.
+    static func finding(_ hit: Matcher.Hit, item: InventoryItem, installed: Version, fix: Fix?) -> Finding? {
+        guard
+            let range = hit.ranges.filter({ $0.contains(installed) }).min(by: { Version.isLess($0.end, $1.end) })
+        else { return nil }
+        return Finding(
+            cve: hit.cve, item: item, fixedIn: ProductRange.fixedInDescription(range, among: hit.ranges), fix: fix)
+    }
+
+    /// One line for the log and the notification: "3 fixable CVEs (1 critical); 5 more affect this Mac but have no fix yet."
+    static func summary(_ r: ScanResult) -> String {
+        let fixable = Set(r.findings.filter { $0.fix != nil }.map(\.cve.id))
+        let crit = Set(r.findings.filter { $0.fix != nil && $0.cve.severity == .critical }.map(\.cve.id)).count
+        let unfixed = Set(r.findings.map(\.cve.id)).subtracting(fixable).count
+        var s = "\(fixable.count) fixable CVE\(fixable.count == 1 ? "" : "s") (\(crit) critical)"
+        if unfixed > 0 { s += "; \(unfixed) more affect this Mac but have no fix yet" }
+        return s
+    }
+
     /// Entry point for `DPatch --scan` (used by the scheduled LaunchAgent).
     static func runHeadless() -> Int32 {
         var status: Int32 = 0
@@ -70,17 +84,11 @@ enum Scanner {
         Task.detached {
             do {
                 let r = try await run { print($0) }
-                let crit = Set(r.findings.filter { $0.cve.severity == .critical }.map(\.cve.id)).count
-                let all = Set(r.findings.map(\.cve.id)).count
                 print(
-                    "Scan complete: \(all) fixable CVEs (\(crit) critical) across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked."
-                )
+                    "Scan complete: \(summary(r)), across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked.")
                 for warning in r.warnings { print("warning: \(warning)") }
                 if Prefs.notifyAfterAutoscan, CommandLine.arguments.contains("--notify") {
-                    notify(
-                        all == 0
-                            ? "No fixable CVEs found."
-                            : "\(all) fixable CVEs found (\(crit) critical). Open D-Patch to review.")
+                    notify(r.findings.isEmpty ? "No CVEs affect this Mac." : "\(summary(r)). Open D-Patch to review.")
                 }
             } catch {
                 print("Scan failed: \(error.localizedDescription)")
