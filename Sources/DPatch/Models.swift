@@ -131,11 +131,10 @@ struct Finding: Codable, Identifiable {
     /// List order: fixable CVEs first, then those with no fix yet; each by severity (critical
     /// first, unscored last), then CVSS score, then newest.
     static func listOrder(_ a: Finding, _ b: Finding) -> Bool {
-        func key(_ f: Finding) -> (Int, Int, Double, Date) {
-            (f.fix == nil ? 0 : 1, Severity.allCases.firstIndex(of: f.cve.severity)!, f.cve.score, f.cve.published)
-        }
-        let (x, y) = (key(a), key(b))
-        if x != y { return x > y }
+        if (a.fix != nil) != (b.fix != nil) { return a.fix != nil }
+        if a.cve.severity != b.cve.severity { return a.cve.severity > b.cve.severity }
+        if a.cve.score != b.cve.score { return a.cve.score > b.cve.score }
+        if a.cve.published != b.cve.published { return a.cve.published > b.cve.published }
         return a.id < b.id
     }
 
