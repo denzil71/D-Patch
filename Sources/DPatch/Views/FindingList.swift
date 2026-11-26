@@ -55,16 +55,23 @@ struct FindingList: View {
     }
 
     @ViewBuilder private var emptyState: some View {
-        if !model.findings.isEmpty, !model.search.isEmpty {
+        if !model.shown.isEmpty, !model.search.isEmpty {
             ContentUnavailableView(
                 "No matches", systemImage: "magnifyingglass",
                 description: Text("No CVEs match “\(model.search)”."))
-        } else if !model.findings.isEmpty, model.filtersActive {
+        } else if !model.shown.isEmpty, model.filtersActive {
             ContentUnavailableView {
                 Label("No CVEs match the filters", systemImage: "line.3.horizontal.decrease.circle")
             } actions: {
                 Button("Clear Filters") { model.clearFilters() }
             }
+        } else if model.hiddenUnfixedCount > 0 {
+            let n = model.hiddenUnfixedCount
+            ContentUnavailableView(
+                "Nothing to patch", systemImage: "checkmark.shield",
+                description: Text(
+                    "No fixable CVEs affect this Mac. \(n) CVE\(n == 1 ? "" : "s") with no fix yet \(n == 1 ? "is" : "are") hidden (Settings › General)."
+                ))
         } else {
             ContentUnavailableView(
                 "Nothing to patch", systemImage: "checkmark.shield",
@@ -135,6 +142,11 @@ private struct ListHeader: View {
             .toggleStyle(.checkbox)
             .disabled(fixable.isEmpty)
             .help("Tick every CVE shown that has a fix")
+            if model.hiddenUnfixedCount > 0 {
+                Text("· \(model.hiddenUnfixedCount) with no fix hidden")
+                    .foregroundStyle(.secondary)
+                    .help("Show them with Settings › General › Show CVEs with no fix yet")
+            }
             Spacer()
             if !model.checked.isEmpty {
                 let hidden = model.hiddenCheckedCount
@@ -472,7 +484,7 @@ private struct FilterBar: View {
                 Menu {
                     Toggle("All fixes", isOn: isFixedBy(nil))
                     Divider()
-                    ForEach(FixKind.allCases) { kind in
+                    ForEach(FixKind.allCases.filter { $0 != FixKind.none || model.showUnfixed }) { kind in
                         Toggle(kind.rawValue, isOn: isFixedBy(kind))
                     }
                 } label: {

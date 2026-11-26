@@ -49,8 +49,13 @@ final class AppModel: ObservableObject {
     @Published var severityFilter: Set<Severity> = []
     @Published var fixFilter: FixKind?
     @Published var hideMajorUpgrades = false
+    /// Settings › General › Show CVEs with no fix yet.
+    @Published var showUnfixed = Prefs.showUnfixed {
+        didSet { if !showUnfixed, fixFilter == FixKind.none { fixFilter = nil } }
+    }
 
     private var observer: NSObjectProtocol?
+    private var defaultsObserver: NSObjectProtocol?
 
     init() {
         load()
@@ -59,6 +64,14 @@ final class AppModel: ObservableObject {
             forName: Scanner.completedNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in if self?.isScanning == false { self?.load() } }
+        }
+        // The setting is changed in the Settings window.
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                if self?.showUnfixed != Prefs.showUnfixed { self?.showUnfixed = Prefs.showUnfixed }
+            }
         }
     }
 
@@ -94,6 +107,10 @@ final class AppModel: ObservableObject {
     var findings: [Finding] { result?.findings ?? [] }
     /// Findings with an update to install; only these can be ticked.
     var fixable: [Finding] { findings.filter { $0.fix != nil } }
+    /// The findings the list can show: all of them, or only fixable ones when the setting is off.
+    var shown: [Finding] { showUnfixed ? findings : fixable }
+    /// CVEs with no fix that the setting hides.
+    var hiddenUnfixedCount: Int { showUnfixed ? 0 : Set(findings.filter { $0.fix == nil }.map(\.cve.id)).count }
     /// macOS updates from the last scan, shown above the list whatever the CVEs.
     var macOSUpdates: [MacOSUpdate] { result?.macOSUpdates ?? [] }
 
@@ -116,11 +133,11 @@ final class AppModel: ObservableObject {
     }
 
     /// Severity levels present in the results, highest first.
-    var severitiesFound: [Severity] { Set(findings.map(\.cve.severity)).sorted(by: >) }
+    var severitiesFound: [Severity] { Set(shown.map(\.cve.severity)).sorted(by: >) }
 
     /// Findings that pass the severity, fix and major-upgrade filters (all dates).
     var filtered: [Finding] {
-        findings.filter { f in
+        shown.filter { f in
             (severityFilter.isEmpty || severityFilter.contains(f.cve.severity))
                 && (fixFilter == nil || FixKind(f.fix) == fixFilter)
                 && !(hideMajorUpgrades && f.isMajorUpgrade)

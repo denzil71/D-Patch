@@ -6,8 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="0.7.0"
-BUILD_NUMBER="13"
+VERSION="0.7.1"
+BUILD_NUMBER="14"
 MIN_MACOS="14.0"
 APP="build/D-Patch.app"
 

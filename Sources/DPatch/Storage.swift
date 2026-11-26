@@ -78,6 +78,11 @@ enum Prefs {
         get { d.string(forKey: "nvdAPIKey") ?? "" }
         set { d.set(newValue, forKey: "nvdAPIKey") }
     }
+    /// List CVEs that affect the Mac but have no fix yet (and mention them in notifications).
+    static var showUnfixed: Bool {
+        get { d.object(forKey: "showUnfixed") as? Bool ?? true }
+        set { d.set(newValue, forKey: "showUnfixed") }
+    }
     static var notifyAfterAutoscan: Bool {
         get { d.object(forKey: "notifyAfterAutoscan") as? Bool ?? true }
         set { d.set(newValue, forKey: "notifyAfterAutoscan") }

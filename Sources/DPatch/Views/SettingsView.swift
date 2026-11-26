@@ -18,6 +18,7 @@ private struct GeneralSettings: View {
     @AppStorage("autoscanMinute") private var minute = 0
     @AppStorage("notifyAfterAutoscan") private var notify = true
     @AppStorage("severities") private var severitiesRaw = "CRITICAL,HIGH"
+    @AppStorage("showUnfixed") private var showUnfixed = true
     @AppStorage("checkForUpdates") private var checkForUpdates = true
     @ObservedObject private var updates = UpdateChecker.shared
     @State private var scheduleError: String?
@@ -78,6 +79,15 @@ private struct GeneralSettings: View {
                 }
                 Text(
                     "Scans list CVEs at the ticked levels, and always CVEs that no one has scored yet. Every level is downloaded either way, so changing them applies from the next scan without downloading again."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("List") {
+                Toggle("Show CVEs with no fix yet", isOn: $showUnfixed)
+                Text(
+                    "CVEs that affect this Mac but that no available update fixes yet. When this is off, they're left out of the list and the scan notification, and the list header says how many are hidden."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
