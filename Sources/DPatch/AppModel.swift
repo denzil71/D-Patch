@@ -128,7 +128,8 @@ final class AppModel: ObservableObject {
     }
 
     var visible: [Finding] {
-        var list = filtered
+        // Sorted here too, so results saved by older versions get the same order.
+        var list = filtered.sorted(by: Finding.listOrder)
         if case .day(let d)? = filter {
             list = list.filter { Calendar.current.isDate($0.cve.published, inSameDayAs: d) }
         }

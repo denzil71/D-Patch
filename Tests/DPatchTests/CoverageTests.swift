@@ -135,6 +135,31 @@ import Testing
                 == "1 fixable CVE (0 critical); 1 more affect this Mac but have no fix yet")
     }
 
+    @Test func listsFixableBySeverityThenUnfixed() {
+        let curl = Fixtures.item(.formula, name: "curl", version: "8.4.0", aliases: ["curl"])
+        func finding(_ id: String, _ severity: Severity, score: Double, fixed: Bool) -> Finding {
+            var f = Fixtures.finding(id, item: curl, fix: Fixtures.fix(.brewFormula, "curl", to: "8.5.0"))
+            f.cve.severity = severity
+            f.cve.score = score
+            if !fixed { f.fix = nil }
+            return f
+        }
+        let list = [
+            finding("NOFIX-CRIT", .critical, score: 9.8, fixed: false),
+            finding("LOW", .low, score: 2.0, fixed: true),
+            finding("UNSCORED", .unscored, score: 0, fixed: true),
+            finding("HIGH-7", .high, score: 7.0, fixed: true),
+            finding("NOFIX-LOW", .low, score: 3.0, fixed: false),
+            finding("CRIT", .critical, score: 9.1, fixed: true),
+            finding("HIGH-8", .high, score: 8.2, fixed: true),
+            finding("MED", .medium, score: 5.0, fixed: true),
+        ]
+        #expect(
+            list.sorted(by: Finding.listOrder).map(\.cve.id) == [
+                "CRIT", "HIGH-8", "HIGH-7", "MED", "LOW", "UNSCORED", "NOFIX-CRIT", "NOFIX-LOW",
+            ])
+    }
+
     // MARK: False matches that listing unfixed CVEs brought to light
 
     @Test func anAppNamedAfterAnotherProductIsNotThatProduct() {

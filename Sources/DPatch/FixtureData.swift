@@ -47,7 +47,7 @@ enum FixtureData {
                 if let f = Scanner.finding(hit, item: item, installed: installed, fix: fix) { findings.append(f) }
             }
         }
-        findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
+        findings.sort(by: Finding.listOrder)
 
         // Other databases' records come from sources.json, keyed by CVE ID, so demo scans stay offline.
         let sources =

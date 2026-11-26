@@ -42,7 +42,7 @@ enum Scanner {
                 if let f = finding(hit, item: item, installed: installed, fix: fix) { findings.append(f) }
             }
         }
-        findings.sort { ($0.cve.published, $0.cve.score) > ($1.cve.published, $1.cve.score) }
+        findings.sort(by: Finding.listOrder)
 
         let checker = SourceChecker(enabled: Prefs.cveSources, progress: progress)
         let sources = await checker.records(for: Array(Set(findings.map(\.cve.id))).sorted())

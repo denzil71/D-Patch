@@ -128,6 +128,17 @@ struct Finding: Codable, Identifiable {
     /// Databases listing this CVE, NVD first.
     var databases: [SourceRecord] { (sources ?? [SourceChecker.nvdRecord(cve.id)]).sorted { $0.source < $1.source } }
 
+    /// List order: fixable CVEs first, then those with no fix yet; each by severity (critical
+    /// first, unscored last), then CVSS score, then newest.
+    static func listOrder(_ a: Finding, _ b: Finding) -> Bool {
+        func key(_ f: Finding) -> (Int, Int, Double, Date) {
+            (f.fix == nil ? 0 : 1, Severity.allCases.firstIndex(of: f.cve.severity)!, f.cve.score, f.cve.published)
+        }
+        let (x, y) = (key(a), key(b))
+        if x != y { return x > y }
+        return a.id < b.id
+    }
+
     /// CISA lists it as exploited in the wild.
     var isKnownExploited: Bool { sources?.contains { $0.source == .kev } ?? false }
 
