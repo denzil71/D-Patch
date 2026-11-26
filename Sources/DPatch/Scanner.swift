@@ -68,12 +68,12 @@ enum Scanner {
     }
 
     /// One line for the log and the notification: "3 fixable CVEs (1 critical); 5 more affect this Mac but have no fix yet."
-    static func summary(_ r: ScanResult) -> String {
+    static func summary(_ r: ScanResult, includeUnfixed: Bool = true) -> String {
         let fixable = Set(r.findings.filter { $0.fix != nil }.map(\.cve.id))
         let crit = Set(r.findings.filter { $0.fix != nil && $0.cve.severity == .critical }.map(\.cve.id)).count
         let unfixed = Set(r.findings.map(\.cve.id)).subtracting(fixable).count
         var s = "\(fixable.count) fixable CVE\(fixable.count == 1 ? "" : "s") (\(crit) critical)"
-        if unfixed > 0 { s += "; \(unfixed) more affect this Mac but have no fix yet" }
+        if includeUnfixed, unfixed > 0 { s += "; \(unfixed) more affect this Mac but have no fix yet" }
         return s
     }
 
@@ -88,7 +88,14 @@ enum Scanner {
                     "Scan complete: \(summary(r)), across \(r.itemsChecked) items, \(r.cvesChecked) CVEs checked.")
                 for warning in r.warnings { print("warning: \(warning)") }
                 if Prefs.notifyAfterAutoscan, CommandLine.arguments.contains("--notify") {
-                    notify(r.findings.isEmpty ? "No CVEs affect this Mac." : "\(summary(r)). Open D-Patch to review.")
+                    let fixable = r.findings.contains { $0.fix != nil }
+                    if r.findings.isEmpty {
+                        notify("No CVEs affect this Mac.")
+                    } else if !fixable, !Prefs.showUnfixed {
+                        notify("No fixable CVEs found.")
+                    } else {
+                        notify("\(summary(r, includeUnfixed: Prefs.showUnfixed)). Open D-Patch to review.")
+                    }
                 }
             } catch {
                 print("Scan failed: \(error.localizedDescription)")

@@ -24,7 +24,7 @@ A macOS app that checks the software on this Mac against CVEs from the NVD (Nati
   - Mac App Store app → `mas upgrade`
   - macOS, Safari and other Apple software → `softwareupdate --install`
 
-  CVEs without such an update are still listed, marked **No fix yet**, with the fixed version where the vendor names one. They can't be ticked; scan again later.
+  CVEs without such an update are still listed, marked **No fix yet**, with the fixed version where the vendor names one. They can't be ticked; scan again later. To leave them out of the list and the scan notification, turn off **Settings › General › Show CVEs with no fix yet** (on by default); the list header then says how many are hidden.
 
 ### Window
 - **macOS updates** — when Apple Software Update offers a macOS update, it's shown at the top of the list, even when no CVE needs it or the list is empty, with **Open Software Update** to install it. A new major version is marked **Major upgrade**.

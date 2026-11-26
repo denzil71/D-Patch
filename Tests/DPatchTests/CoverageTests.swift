@@ -133,6 +133,8 @@ import Testing
         #expect(
             Scanner.summary(result([fixed, unfixed]))
                 == "1 fixable CVE (0 critical); 1 more affect this Mac but have no fix yet")
+        // With Show CVEs with no fix yet turned off, the notification leaves them out.
+        #expect(Scanner.summary(result([fixed, unfixed]), includeUnfixed: false) == "1 fixable CVE (0 critical)")
     }
 
     @Test func listsFixableBySeverityThenUnfixed() {
